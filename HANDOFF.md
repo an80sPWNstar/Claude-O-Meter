@@ -29,3 +29,21 @@ items, and actually installing the built .exe. Not tagged or released.
 
 **Related, outside this repo:** the same transition fix was committed in `tempsLCD-web`
 (`2a3cccd`, on `main`, **committed but NOT pushed** — local was 1 ahead of origin at the time).
+
+## 2026-08-20 14:13 -- v0.3.0 UI pass (opus/claude-code)
+
+Committed 503a596 on `main` and bumped to 0.3.0. Tray icon is static now (the live 5%-step gauge
+was unreadable at 16px); every account block carries a freshness chip and an ACTIVE pill; account
+switching left the panel for the Settings menu; the OAuth provider is suspended while cswap reports
+accounts (both share one ~28-30 req/hour token budget and multi-account mode discarded the
+provider's readings); resizing reflows on both axes with a sub-linear type curve plus a
+Settings -> Text Size setting; header Settings/Help buttons replaced the right-click menu.
+
+Verified live, not mocked: idle account refetches without being switched to (6 min sample), zero
+OAuth polls with cswap present and automatic resume with cswap off PATH, layout at seven window
+shapes and three text sizes via design/fit-check.cjs (an offscreen capturePage harness — use it,
+screen capture is useless when the desktop is locked or another window is on top).
+
+**In flight:** installer build for 0.3.0 and a push to origin. **Untested:** the claude.ai
+cookie-session fallback, and the tray menu items. **Don't touch:** the window-size formula is
+duplicated in main.js widgetSize() and renderer nativeSize(), and ZOOM_CURVE now is too.
