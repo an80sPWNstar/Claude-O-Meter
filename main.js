@@ -173,7 +173,10 @@ function createWindow() {
 function openSettings() {
   if (settingsWin) { settingsWin.focus(); return }
   settingsWin = new BrowserWindow({
-    width: 380,
+    // 400 not 380: eight 36px theme swatches with 8px gaps need 344px of
+    // content width, and 380 minus the body's 20px padding leaves 340 — the
+    // last swatch wrapped to its own row.
+    width: 400,
     height: 430,
     icon: APP_ICON,
     frame: false,

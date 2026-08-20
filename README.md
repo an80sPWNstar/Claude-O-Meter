@@ -58,6 +58,16 @@ npm run build:dir  # unpacked build, no installer
 
 Set `CLAUDEOMETER_SWAP_MOCK=1` to feed the multi-account view three fake accounts without `cswap` installed.
 
+**Gotcha:** `npm install` can leave `node_modules/electron/dist/` empty — Electron's post-install download reports a cache hit but extracts nothing, so `electron.exe` is missing and `npm start` does nothing. The cached zip is intact; extract it by hand:
+
+```bash
+ZIP="$LOCALAPPDATA/electron/Cache/<hash>/electron-v<version>-win32-x64.zip"
+unzip -t "$ZIP"                                    # expect "No errors detected"
+rm -rf node_modules/electron/dist && mkdir -p node_modules/electron/dist
+unzip -o -q "$ZIP" -d node_modules/electron/dist
+printf 'electron.exe' > node_modules/electron/path.txt
+```
+
 **Gotcha:** Claude Code sets `ELECTRON_RUN_AS_NODE=1`, which makes Electron run as plain Node (`app` comes back undefined). `unset ELECTRON_RUN_AS_NODE` first, or launch from a separate terminal.
 
 ## Project layout
