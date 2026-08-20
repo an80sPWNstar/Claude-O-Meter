@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+  <title>Claude-O-Meter Settings</title>
+  <style>
+    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+    html,body { width:100%; height:100%; overflow:hidden; background:#08090a;
+      font-family:system-ui,-apple-system,'Segoe UI',sans-serif; color:#e7e9ec; font-size:13px; }
+    input,button { font-family:inherit; outline:none; }
+
+    .win { width:100%; height:100%; display:flex; flex-direction:column;
+      background:#0e0f10; border:1px solid #000; overflow:hidden; }
+
+    .titlebar { height:34px; background:#1a1b1d; display:flex; align-items:center; gap:9px;
+      padding:0 12px; border-bottom:1px solid #000; flex-shrink:0; -webkit-app-region:drag; }
+    .tb-dot { width:13px; height:13px; border-radius:3px;
+      background:linear-gradient(135deg,#D97757,#a34a2c); box-shadow:0 0 6px rgba(217,119,87,.5); }
+    .tb-title { font-size:12px; color:#c4c8cc; }
+    .wbtns { margin-left:auto; display:flex; -webkit-app-region:no-drag; }
+    .wbtn { width:44px; height:34px; display:flex; align-items:center; justify-content:center;
+      color:#9aa0a6; cursor:pointer; }
+    .wbtn:hover { background:#26282b; }
+    .wbtn.close:hover { background:#c0392b; color:#fff; }
+    .wbtn i { width:15px; height:15px; }
+
+    .body { flex:1; padding:18px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:18px; }
+    .sect { font-size:15px; font-weight:600; color:#e7e9ec; }
+
+    .check { display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none;
+      color:#d6d9dc; font-size:13px; }
+    .check input { width:15px; height:15px; accent-color:#D97757; cursor:pointer; }
+    .check.disabled { color:#5a5f64; cursor:default; }
+    .check.disabled input { cursor:default; }
+    .hint { font-size:11px; color:#5a5f64; margin-left:4px; display:none; }
+
+    .theme-pick { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+    .theme-swatch { width:36px; height:36px; border-radius:8px; cursor:pointer;
+      border:2px solid transparent; position:relative; overflow:hidden; flex-shrink:0;
+      transition: border-color 0.15s, transform 0.1s; }
+    .theme-swatch:hover { transform:scale(1.1); }
+    .theme-swatch.active { border-color:#D97757; }
+    .theme-swatch span { position:absolute; bottom:2px; right:3px; font-size:7px;
+      color:inherit; opacity:0.8; font-weight:600; text-transform:uppercase; }
+    .theme-label { font-size:12px; color:#9aa0a6; }
+
+    .acct { margin:10px 0 0 25px; }
+    .acct-status { font-size:12px; color:#9aa0a6; }
+    .acct-status.ok { color:#D97757; }
+    .acct-btn { background:#1b1d20; border:1px solid #2c2f33; border-radius:7px;
+      padding:6px 12px; color:#e7e9ec; font-size:12px; cursor:pointer; margin-top:7px; }
+    .acct-btn:hover { border-color:#D97757; }
+    .acct-btn:disabled { color:#5a5f64; border-color:#2c2f33; cursor:default; }
+    .acct-err { font-size:11px; color:#e0564a; margin-top:5px; display:none; }
+  </style>
+</head>
+<body>
+<div class="win">
+
+  <div class="titlebar">
+    <div class="tb-dot"></div>
+    <span class="tb-title">Claude-O-Meter Settings</span>
+    <div class="wbtns">
+      <div class="wbtn close" id="btn-close"><i data-lucide="x"></i></div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div>
+      <div class="sect" style="margin-bottom:12px;">General</div>
+      <label class="check" id="autostart-row" style="margin-bottom:12px;">
+        <input type="checkbox" id="autostart">
+        <span>Start with Windows<span class="hint" id="autostart-hint"> (installed builds only)</span></span>
+      </label>
+      <label class="check" style="margin-bottom:12px;">
+        <input type="checkbox" id="tray">
+        <span>Minimize to tray instead of closing</span>
+      </label>
+      <label class="check" style="margin-bottom:12px;">
+        <input type="checkbox" id="ontop">
+        <span>Always on top</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="usage">
+        <span>Poll Claude usage</span>
+      </label>
+      <div class="acct">
+        <div class="acct-status" id="acct-status">Claude account: checking&hellip;</div>
+        <button class="acct-btn" id="acct-btn">Log in with Claude account</button>
+        <div class="acct-err" id="acct-err"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="theme-label">Theme</div>
+      <div class="theme-pick" id="theme-pick"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="../assets/lucide.min.js"></script>
+<script src="settings.js"></script>
+</body>
+</html>

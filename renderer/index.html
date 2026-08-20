@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+  <title>Claude-O-Meter</title>
+  <style>
+    @font-face {
+      font-family: 'Share Tech Mono';
+      src: url('../assets/fonts/ShareTechMono-Regular.ttf') format('truetype');
+      font-display: block;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 100vw; height: 100vh;
+      background: transparent;
+      overflow: hidden;
+      user-select: none;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    /* ── Bezel ───────────────────────────────────────────────────
+       Pinned to the native pixel size; renderer.js applies a
+       translate+scale so an OS resize zooms instead of reflowing. */
+    .bezel {
+      position: absolute; inset: 0;
+      transform-origin: top left;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      /* Theme vars — [data-theme] blocks below override per theme. */
+      --cl-bg: #F0EEE6;
+      --cl-border: #E0DED5;
+      --cl-text: #191919;
+      --cl-track: #E6E4DB;
+      --cl-accent: #D97757;
+      --cl-warn: #C24E30;
+      --cl-hint: #888;
+      --cl-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      background: var(--cl-bg);
+      color: var(--cl-text);
+      border: 1px solid var(--cl-border);
+      box-shadow: var(--cl-shadow);
+      border-radius: 12px;
+      transition: background 0.4s, border-color 0.4s, box-shadow 0.4s;
+    }
+
+    /* Dark (warm charcoal) */
+    .bezel[data-theme="dark"] {
+      --cl-bg: #1F1E1B;
+      --cl-border: #2C2B28;
+      --cl-text: #F0EEE6;
+      --cl-track: #2C2B28;
+      --cl-accent: #D97757;
+      --cl-warn: #E86A4E;
+      --cl-hint: #9A9890;
+      --cl-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    /* Midnight (cool blue-grey) */
+    .bezel[data-theme="midnight"] {
+      --cl-bg: #0F1115;
+      --cl-border: #1A1D24;
+      --cl-text: #E8EAF0;
+      --cl-track: #1A1D24;
+      --cl-accent: #5B8DEF;
+      --cl-warn: #EF5B5B;
+      --cl-hint: #6B7280;
+      --cl-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    /* Phosphor (retro terminal) */
+    .bezel[data-theme="phosphor"] {
+      --cl-bg: #050805;
+      --cl-border: #142414;
+      --cl-text: #33FF33;
+      --cl-track: #0A140A;
+      --cl-accent: #33FF33;
+      --cl-warn: #FF3300;
+      --cl-hint: #1A801A;
+      --cl-shadow: 0 0 10px rgba(51, 255, 51, 0.15);
+    }
+    /* OutRun '83 (neon sunset) */
+    .bezel[data-theme="outrun"] {
+      --cl-bg: linear-gradient(180deg, #160030 0%, #3A0A52 55%, #8A1E63 100%);
+      --cl-border: #FF2D95;
+      --cl-text: #22D3FF;
+      --cl-track: rgba(0, 0, 0, 0.55);
+      --cl-accent: #FF2D95;
+      --cl-warn: #FF8800;
+      --cl-hint: rgba(255, 45, 149, 0.75);
+      --cl-shadow: 0 0 14px rgba(255, 45, 149, 0.35);
+    }
+    /* Cinch I.T. (brand green on black, logo watermark) */
+    .bezel[data-theme="cinch"] {
+      --cl-bg: url('../assets/images/cinch-logo.png') no-repeat right 12px bottom 10px / 150px auto, #101112;
+      --cl-border: #17d42a;
+      --cl-text: #FFFFFF;
+      --cl-track: #23262a;
+      --cl-accent: #17d42a;
+      --cl-warn: #ff3a2d;
+      --cl-hint: #8e8e93;
+      --cl-shadow: 0 0 12px rgba(23, 212, 42, 0.25);
+    }
+    /* Porsche (brushed steel, Guards Red, crest + etched 997 outline).
+       Layer order: crest (crisp) > dark wash (dims the etching) > car outline > steel. */
+    .bezel[data-theme="porsche"] {
+      --cl-bg: url('../assets/images/porsche-crest.png') no-repeat right 12px bottom 10px / 34px auto,
+               linear-gradient(rgba(38, 41, 47, 0.45), rgba(30, 33, 38, 0.45)),
+               url('../assets/images/porsche-997-outline.png') no-repeat center 62% / 88% auto,
+               linear-gradient(160deg, #4A4F57 0%, #2E3238 55%, #40454C 100%);
+      --cl-border: #C39A6B;
+      --cl-text: #F5F5F3;
+      --cl-track: rgba(0, 0, 0, 0.45);
+      --cl-accent: #D5001C;
+      --cl-warn: #FFCC00;
+      --cl-hint: #9BA1A8;
+      --cl-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    }
+    /* St. George Temple photo background, dark wash for readability */
+    .bezel[data-theme="temple"] {
+      --cl-bg: linear-gradient(rgba(13, 15, 20, 0.52), rgba(13, 15, 20, 0.62)),
+               url('../assets/images/stgeorge-temple.jpg') center / cover no-repeat;
+      --cl-border: rgba(255, 255, 255, 0.35);
+      --cl-text: #FFFFFF;
+      --cl-track: rgba(255, 255, 255, 0.28);
+      --cl-accent: #D97757;
+      --cl-warn: #FF6B4A;
+      --cl-hint: rgba(255, 255, 255, 0.75);
+      --cl-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 10px 6px 16px;
+      flex-shrink: 0;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--cl-text);
+      opacity: 0.8;
+    }
+    .win-controls { display: flex; align-items: center; gap: 1px; }
+    .wbtn {
+      width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 3px;
+      cursor: pointer;
+      color: var(--cl-text);
+      opacity: 0.4;
+      transition: background 0.15s, opacity 0.15s, color 0.15s;
+    }
+    .wbtn:hover { background: rgba(128,128,128,0.18); opacity: 1; }
+    .wbtn.close-btn:hover { background: rgba(192,57,43,0.75); color: #fff; opacity: 1; }
+    .wbtn svg { width: 11px; height: 11px; }
+
+    /* ── Body ────────────────────────────────────────────────── */
+    .content {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      padding: 6px 16px 16px;
+    }
+
+    /* Shown when there is no usage data to paint yet */
+    .hint {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--cl-hint);
+      font-size: 13px;
+      font-style: italic;
+      text-align: center;
+    }
+
+    /* ── Single-account meters ───────────────────────────────── */
+    .meters {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      height: 100%;
+    }
+    .meter {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      justify-content: center;
+    }
+    .meter-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .meter-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--cl-text);
+      opacity: 0.7;
+    }
+    .meter-value {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 20px;
+      color: var(--cl-text);
+      line-height: 1;
+    }
+    .track {
+      width: 100%;
+      flex: none; /* fixed-height bar must never be the flex-shrink victim */
+      height: 8px;
+      background-color: var(--cl-track);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .fill {
+      height: 100%;
+      width: 0%;
+      background-color: var(--cl-accent);
+      border-radius: 4px;
+      transition: width 0.5s ease, background-color 0.3s ease;
+    }
+    .fill.warn { background-color: var(--cl-warn); }
+    .meter-value.warn { color: var(--cl-warn); }
+    .meter-footer {
+      font-size: 14px;
+      color: var(--cl-text);
+      opacity: 0.65;
+      font-weight: 500;
+    }
+
+    /* ── Multi-account view (cswap) ──────────────────────────── */
+    .accounts {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+      justify-content: center;
+    }
+    .acct { display: flex; flex-direction: column; gap: 5px; }
+    .acct-name {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--cl-text);
+      opacity: 0.75;
+    }
+    .acct.active .acct-name { color: var(--cl-accent); opacity: 1; }
+    .acct-name.switchable { cursor: pointer; }
+    .acct-name.switchable:hover { color: var(--cl-accent); opacity: 1; }
+    /* usageStatus !== 'ok' → cswap couldn't fetch usage; dim = "no data", not 0% */
+    .acct.na { opacity: 0.45; }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .row-label {
+      font-size: 10px;
+      font-weight: 600;
+      width: 52px;
+      flex: none;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--cl-text);
+      opacity: 0.6;
+    }
+    .row .track { flex: 1; height: 7px; margin-bottom: 0; }
+    .row-val {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 13px;
+      width: 40px;
+      flex: none;
+      text-align: right;
+      color: var(--cl-text);
+    }
+    .row-val.warn { color: var(--cl-warn); }
+    .row-reset {
+      font-size: 10px;
+      width: 58px;
+      flex: none;
+      text-align: right;
+      color: var(--cl-text);
+      opacity: 0.55;
+    }
+
+    /* Auto-switch daemon footer */
+    .auto {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      flex: none;
+      font-size: 10px;
+      color: var(--cl-hint);
+    }
+    .auto-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--cl-track);
+      flex: none;
+    }
+    .auto-dot.on { background: var(--cl-accent); box-shadow: 0 0 6px var(--cl-accent); }
+    .auto-label { font-weight: 700; letter-spacing: 0.6px; }
+  </style>
+</head>
+<body>
+  <div class="bezel" id="bezel" data-theme="cream">
+
+    <div class="header">
+      <span class="title">Claude Usage</span>
+      <div class="win-controls">
+        <div class="wbtn" id="btn-minimize" title="Minimize"><i data-lucide="minus"></i></div>
+        <div class="wbtn close-btn" id="btn-close" title="Close"><i data-lucide="x"></i></div>
+      </div>
+    </div>
+
+    <section class="content">
+      <div id="hint" class="hint">Waiting for Claude usage&hellip;</div>
+
+      <!-- Single-account meters (OAuth token / claude.ai cookie session) -->
+      <div id="meters" class="meters" style="display: none;">
+        <div class="meter">
+          <div class="meter-header">
+            <span class="meter-label">SESSION (5H)</span>
+            <span id="session-val" class="meter-value">--%</span>
+          </div>
+          <div class="track"><div id="session-bar" class="fill"></div></div>
+          <div id="session-reset" class="meter-footer">resets in --</div>
+        </div>
+        <div class="meter">
+          <div class="meter-header">
+            <span class="meter-label">WEEKLY</span>
+            <span id="week-val" class="meter-value">--%</span>
+          </div>
+          <div class="track"><div id="week-bar" class="fill"></div></div>
+          <div id="week-reset" class="meter-footer">resets in --</div>
+        </div>
+        <div id="scoped-meter" class="meter" style="display: none;">
+          <div class="meter-header">
+            <span id="scoped-label" class="meter-label">SCOPED (7D)</span>
+            <span id="scoped-val" class="meter-value">--%</span>
+          </div>
+          <div class="track"><div id="scoped-bar" class="fill"></div></div>
+          <div id="scoped-reset" class="meter-footer">resets in --</div>
+        </div>
+      </div>
+
+      <!-- Multi-account view (cswap): one meter block per connected account -->
+      <div id="accounts" class="accounts" style="display: none;"></div>
+      <div id="auto" class="auto" style="display: none;">
+        <span id="auto-dot" class="auto-dot"></span>
+        <span class="auto-label">AUTO</span>
+        <span id="auto-val"></span>
+      </div>
+    </section>
+
+  </div><!-- /bezel -->
+
+  <script src="../assets/lucide.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

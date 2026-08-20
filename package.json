@@ -1,0 +1,40 @@
+{
+  "name": "claude-o-meter",
+  "version": "0.1.0",
+  "description": "Desktop widget for Claude plan usage — session, weekly, and model-scoped limits with reset countdowns",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.claudeometer.app",
+    "productName": "Claude-O-Meter",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "settings/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/images/app-icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  },
+  "author": "Bryan Henson",
+  "license": "MIT",
+  "private": true
+}
