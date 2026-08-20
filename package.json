@@ -1,6 +1,6 @@
 {
   "name": "claude-o-meter",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Desktop widget for Claude plan usage — session, weekly, and model-scoped limits with reset countdowns",
   "main": "main.js",
   "scripts": {

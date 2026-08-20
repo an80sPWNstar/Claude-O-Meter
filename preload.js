@@ -8,12 +8,10 @@ contextBridge.exposeInMainWorld('claudeOMeter', {
   onUsageData: (cb) => ipcRenderer.on('usage-data', (_e, data) => cb(data)),
   // Widget: cswap all-account stream
   onClaudeSwap: (cb) => ipcRenderer.on('claude-swap', (_e, data) => cb(data)),
-  claudeSwapSwitch: (number) => ipcRenderer.invoke('claude:swap-switch', number),
-  claudeSwapRefresh: () => ipcRenderer.invoke('claude:swap-refresh'),
   // Widget: window controls
   minimize:        () => ipcRenderer.send('widget:minimize'),
   close:           () => ipcRenderer.send('widget:close'),
-  showContextMenu: () => ipcRenderer.send('widget:context-menu'),
+  showMenu: (kind, x, y) => ipcRenderer.send('widget:menu', { kind, x, y }),
   moveWindow:      (dx, dy) => ipcRenderer.send('widget:move', { dx, dy }),
   dragStart:       () => ipcRenderer.send('widget:drag-start'),
   dragEnd:         () => ipcRenderer.send('widget:drag-end'),

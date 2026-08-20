@@ -8,7 +8,10 @@
 const { execFile } = require('child_process')
 const { cswapCmd } = require('./cswap-cmd')
 
-const POLL_MS = 45000
+// Reading cswap's store costs no network request — cswap serves anything
+// younger than its own 180s freshness floor straight from disk — so this only
+// bounds how long a fresh fetch sits there before the widget shows it.
+const POLL_MS = 30000
 
 // `cswap auto` is a foreground polling loop — no daemon, no pidfile, nothing on
 // disk to check — so the only way to know it is running is to look for the
@@ -131,6 +134,10 @@ function parseSwap(stdout) {
         scopedName: scoped ? String(scoped.name || 'Fable').slice(0, 16) : null,
         scopedPct: scoped ? clampPct(scoped.pct) : null,
         scopedResetMs: scoped ? isoMs(scoped.resetsAt) : null,
+        // How old the numbers are. cswap refetches each account on its own
+        // ~5 min schedule, so an idle account's figures are current to within
+        // that window, not to the 45s widget poll — the widget says which.
+        usageFetchedMs: isoMs(a.usageFetchedAt),
       }
     }),
   }
@@ -146,14 +153,14 @@ function mockPayload() {
       { number: 1, alias: 'cinchit', active: false, disabled: false, usageStatus: 'ok',
         fiveHourPct: 62, sevenDayPct: 41, fiveHourResetMs: Date.now() + 47 * 60000,
         sevenDayResetMs: Date.now() + 30 * 3600000, scopedName: 'Fable', scopedPct: 71,
-        scopedResetMs: Date.now() + 30 * 3600000 },
+        scopedResetMs: Date.now() + 30 * 3600000, usageFetchedMs: Date.now() - 4 * 60000 },
       { number: 2, alias: 'cintrix', active: true, disabled: false, usageStatus: 'ok',
         fiveHourPct: 97, sevenDayPct: 83, fiveHourResetMs: Date.now() + 12 * 60000,
         sevenDayResetMs: Date.now() + 52 * 3600000, scopedName: 'Fable', scopedPct: 88,
-        scopedResetMs: Date.now() + 52 * 3600000 },
+        scopedResetMs: Date.now() + 52 * 3600000, usageFetchedMs: Date.now() - 20000 },
       { number: 3, alias: 'apikey', active: false, disabled: true, usageStatus: 'unavailable',
         fiveHourPct: null, sevenDayPct: null, fiveHourResetMs: null, sevenDayResetMs: null,
-        scopedName: null, scopedPct: null, scopedResetMs: null },
+        scopedName: null, scopedPct: null, scopedResetMs: null, usageFetchedMs: null },
     ],
   }
 }

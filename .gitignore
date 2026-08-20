@@ -3,3 +3,8 @@ dist/
 _*.log
 _*.png
 *.stop
+
+# design/ scratch: run logs, capture output, dead one-off probes
+design/_*
+design/icon-proof*.html
+design/*-check.png

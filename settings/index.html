@@ -33,6 +33,12 @@
     .check input { width:15px; height:15px; accent-color:#D97757; cursor:pointer; }
     .check.disabled { color:#5a5f64; cursor:default; }
     .check.disabled input { cursor:default; }
+    .field { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .field select {
+      background:#1b1e21; color:#e8e6e0; border:1px solid #33383d; border-radius:4px;
+      padding:4px 6px; font:inherit; font-size:12px; cursor:pointer; min-width:120px;
+    }
+    .field select:focus { outline:1px solid #D97757; }
     .hint { font-size:11px; color:#5a5f64; margin-left:4px; display:none; }
 
     .theme-pick { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
@@ -81,10 +87,20 @@
         <input type="checkbox" id="ontop">
         <span>Always on top</span>
       </label>
-      <label class="check">
+      <label class="check" style="margin-bottom:12px;">
         <input type="checkbox" id="usage">
         <span>Poll Claude usage</span>
       </label>
+      <div class="field">
+        <span>Text size</span>
+        <select id="textscale">
+          <option value="0.9">Small (90%)</option>
+          <option value="1">Normal (100%)</option>
+          <option value="1.15">Large (115%)</option>
+          <option value="1.3">Larger (130%)</option>
+          <option value="1.5">Largest (150%)</option>
+        </select>
+      </div>
       <div class="acct">
         <div class="acct-status" id="acct-status">Claude account: checking&hellip;</div>
         <button class="acct-btn" id="acct-btn">Log in with Claude account</button>

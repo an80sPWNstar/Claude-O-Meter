@@ -5,9 +5,22 @@ Frameless desktop widget showing Claude plan usage limits and reset countdowns.
 ## Features
 
 - **Usage meters** — 5-hour session limit, 7-day weekly limit, and the model-scoped weekly limit when the account has one. Each shows percent used, a progress bar, and a live reset countdown.
-- **Multi-account** — with the `cswap` CLI installed, one meter block per connected account; click an inactive account name to switch to it.
+- **Multi-account** — with the `cswap` CLI installed, one meter block per connected account, each
+  with its own freshness chip (`live`, `4m ago`) since cswap refetches each account on its own
+  schedule — 3 minutes is the endpoint's freshness floor, and an idle account drifts further out
+  while its usage isn't moving. Switching the active account is a right-click menu item, on the
+  widget and on the tray, so nothing in the panel itself can fire `cswap switch` on a stray click.
+  With cswap present the app's own OAuth poll is suspended, since both share one per-token request
+  budget and only the cswap figures get painted.
 - **Window behavior** — frameless, transparent, draggable by its body, resizable with scale-to-fit zoom. Optional always-on-top. Resizes itself to fit the account count in multi-account mode.
-- **Tray** — show/hide widget, refresh now, settings, about, quit. The app stays resident in the tray; it only quits from the tray or the right-click menu.
+- **Settings and Help in the header** — the two header buttons carry everything: text size, theme,
+  always-on-top, refresh, account switching, a plain-language guide to the panel, and About. There
+  is no right-click menu.
+- **Resizes freely** — width and height are independent; the bars stretch and the type scales
+  sub-linearly so it stays readable at small sizes. Settings → Text Size raises the whole curve
+  (90%–150%) and grows the window's minimum to match.
+- **Tray tooltip** — hovering the tray icon gives the active account's session and weekly percentages and the reset countdown, without opening the window.
+- **Tray menu** — show/hide widget, refresh now, settings, about, quit. The app stays resident in the tray; it only quits from the tray or the right-click menu.
 - **8 themes** — cream, dark, midnight, phosphor, outrun, cinch, porsche, temple. Picked from the settings window or by right-clicking the widget.
 
 ## Install
@@ -88,8 +101,25 @@ printf 'electron.exe' > node_modules/electron/path.txt
 │   ├── claude-swap.js       # cswap multi-account collector (45s poll)
 │   ├── cswap-cmd.js         # platform-correct cswap invocation
 │   └── service.js           # 1s tick so reset countdowns stay live
-└── assets/                  # font, icons, theme art, lucide
+├── scripts/
+│   └── make-icons.cjs       # regenerates both .ico files from geometry
+└── assets/
+    ├── images/              # app-icon.ico, tray-icon.ico, theme art
+    └── fonts/, lucide.min.js
 ```
+
+## Icons
+
+`app-icon.ico` and `tray-icon.ico` are generated, not hand-exported — run
+`unset ELECTRON_RUN_AS_NODE && ./node_modules/electron/dist/electron.exe scripts/make-icons.cjs`
+to rebuild them from the geometry in that file. It emits both `.ico` files at
+16/24/32/48/64/128/256 with the stroke weight raised at the small end.
+
+The mark is a cut C — an open letterform whose stroke is the usage fill. The app icon draws it in
+terracotta on a cream tile over a grey track; the tray icon inverts that to a cream mark on a solid
+terracotta tile, with no track and no value. The tray icon is deliberately **static**: a gauge drawn
+at 16px is unreadable at low usage, where a few percent is a two-pixel stroke that reads as a stray
+dot rather than an icon. The live numbers are in the tooltip.
 
 ## Security notes
 

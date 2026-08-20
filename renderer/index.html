@@ -25,8 +25,8 @@
        Pinned to the native pixel size; renderer.js applies a
        translate+scale so an OS resize zooms instead of reflowing. */
     .bezel {
-      position: absolute; inset: 0;
-      transform-origin: top left;
+      /* Size is set from JS in the zoomed coordinate space — see fitBezel(). */
+      position: absolute; top: 0; left: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -141,6 +141,7 @@
       flex-shrink: 0;
     }
     .title {
+      white-space: nowrap;
       font-size: 14px;
       font-weight: 600;
       letter-spacing: 0.5px;
@@ -148,6 +149,24 @@
       color: var(--cl-text);
       opacity: 0.8;
     }
+    /* Header menu buttons. These carry what used to be the right-click menu,
+       so they sit beside the title rather than in the window-control cluster —
+       a command is not a window control. */
+    .menu-bar { display: flex; align-items: center; gap: 2px; margin-left: 12px; flex: 1;
+      white-space: nowrap; }
+    .mbtn {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--cl-text);
+      opacity: 0.55;
+      padding: 3px 7px;
+      border-radius: 3px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .mbtn:hover { background: rgba(128,128,128,0.18); opacity: 1; }
     .win-controls { display: flex; align-items: center; gap: 1px; }
     .wbtn {
       width: 22px; height: 22px;
@@ -247,7 +266,10 @@
       gap: 14px;
       flex: 1;
       min-height: 0;
-      justify-content: center;
+      /* Extra height goes between the account blocks, not into one dead band
+         above them — the rows inside a block stay tight, so the grouping still
+         reads at any window height. */
+      justify-content: space-evenly;
     }
     .acct { display: flex; flex-direction: column; gap: 5px; }
     .acct-name {
@@ -259,8 +281,28 @@
       opacity: 0.75;
     }
     .acct.active .acct-name { color: var(--cl-accent); opacity: 1; }
-    .acct-name.switchable { cursor: pointer; }
-    .acct-name.switchable:hover { color: var(--cl-accent); opacity: 1; }
+    /* Freshness of this account's figures. cswap refetches each account on its
+       own ~5 min schedule, so the chip stops all rows reading equally current. */
+    .acct-head { display: flex; align-items: baseline; gap: 6px; }
+    .acct-tag {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--cl-accent);
+      border: 1px solid var(--cl-accent);
+      border-radius: 3px;
+      padding: 1px 4px;
+      opacity: 0.9;
+    }
+    .acct-age {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--cl-text);
+      opacity: 0.45;
+    }
+    .acct-age.stale { color: var(--cl-warn); opacity: 0.8; }
     /* usageStatus !== 'ok' → cswap couldn't fetch usage; dim = "no data", not 0% */
     .acct.na { opacity: 0.45; }
     .row { display: flex; align-items: center; gap: 8px; }
@@ -318,6 +360,10 @@
 
     <div class="header">
       <span class="title">Claude Usage</span>
+      <div class="menu-bar">
+        <span class="mbtn" id="btn-settings">Settings</span>
+        <span class="mbtn" id="btn-help">Help</span>
+      </div>
       <div class="win-controls">
         <div class="wbtn" id="btn-minimize" title="Minimize"><i data-lucide="minus"></i></div>
         <div class="wbtn close-btn" id="btn-close" title="Close"><i data-lucide="x"></i></div>

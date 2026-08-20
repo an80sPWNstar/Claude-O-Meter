@@ -5,11 +5,32 @@
 
 const bezel = document.getElementById('bezel')
 
-// ── Scale-to-fit ───────────────────────────────────────────────────
-// The bezel is pinned to its native pixel size; when the OS window differs
-// (user resize) the whole widget is zoomed with a translate+scale and centered
-// — no reflow, no clipping. At the native size the factor is exactly 1.
+// ── Fit ────────────────────────────────────────────────────────────
+// The widget fills the window in both axes and reflows: a wider window gives
+// longer bars, a taller one more room between rows, and the two are
+// independent. Only the type scale is uniform — text is zoomed by a single
+// factor rather than stretched per axis, since a non-uniform scale is exactly
+// what wrecks glyph proportions. `zoom` is used rather than `transform: scale`
+// because zoom changes the layout box, so the flex rows below still lay out
+// against the real window size; a transform would paint over a box that never
+// reflowed.
 const BASE_SIZE = { width: 360, height: 230 }
+
+// Type-scale bounds. Below the floor the labels stop being legible; above the
+// ceiling a stretched window turns into billboard text with empty gutters.
+const MIN_ZOOM = 0.75
+const MAX_ZOOM = 2.5
+
+// Type follows the window sub-linearly. Straight proportional scaling made the
+// text collapse the moment the window came off its native size — half the
+// window meant half the type — which is unreadable long before the layout
+// actually needs the room. At 0.6, half the window still leaves the text at
+// ~66%, so shrinking mostly costs whitespace and bar length instead.
+const ZOOM_CURVE = 0.6
+
+// Settings → Text Size. Multiplies the fitted zoom, so it raises the whole
+// curve rather than pinning one size.
+let textScale = 1
 
 // Latest cswap all-account payload — null until the first poll.
 let lastSwap = null
@@ -26,12 +47,16 @@ function fitBezel() {
   const ww = window.innerWidth
   const wh = window.innerHeight
   if (!ww || !wh) return
-  bezel.style.width = `${nw}px`
-  bezel.style.height = `${nh}px`
-  const s = Math.min(ww / nw, wh / nh)
-  const tx = (ww - nw * s) / 2
-  const ty = (wh - nh * s) / 2
-  bezel.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`
+  // The smaller ratio drives the type scale, so stretching one axis lengthens
+  // the bars instead of inflating the text off the other edge.
+  const ratio = Math.min(ww / nw, wh / nh)
+  const fitted = Math.pow(ratio, ZOOM_CURVE)
+  const z = Math.min(Math.max(fitted, MIN_ZOOM), MAX_ZOOM) * textScale
+  // Sizes are set in the zoomed coordinate space, which is the window divided
+  // by the factor — the bezel then covers the window exactly at any shape.
+  bezel.style.zoom = z
+  bezel.style.width = `${ww / z}px`
+  bezel.style.height = `${wh / z}px`
 }
 window.addEventListener('resize', fitBezel)
 fitBezel()
@@ -40,10 +65,20 @@ fitBezel()
 document.getElementById('btn-minimize').addEventListener('click', () => window.claudeOMeter?.minimize())
 document.getElementById('btn-close').addEventListener('click', () => window.claudeOMeter?.close())
 
-document.addEventListener('contextmenu', (e) => {
-  e.preventDefault()
-  window.claudeOMeter?.showContextMenu()
-})
+// The header buttons carry every command the right-click menu used to. Each
+// menu is popped under its own button, at coordinates in window space.
+function openMenu(kind, btn) {
+  const r = btn.getBoundingClientRect()
+  // getBoundingClientRect is in the bezel's zoomed space; the menu is placed in
+  // real window pixels, so undo the zoom before sending.
+  const z = Number(bezel.style.zoom) || 1
+  window.claudeOMeter?.showMenu?.(kind, Math.round(r.left * z), Math.round(r.bottom * z))
+}
+const btnSettings = document.getElementById('btn-settings')
+const btnHelp = document.getElementById('btn-help')
+btnSettings.addEventListener('click', () => openMenu('settings', btnSettings))
+btnHelp.addEventListener('click', () => openMenu('help', btnHelp))
+document.addEventListener('contextmenu', (e) => e.preventDefault())
 
 // ── JS window drag ─────────────────────────────────────────────────
 // -webkit-app-region:drag is deliberately not used: it makes Windows treat the
@@ -56,7 +91,7 @@ const RESIZE_BORDER = 8
 
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return
-  if (e.target.closest('.win-controls, .acct-name, button, input, select')) return
+  if (e.target.closest('.win-controls, .mbtn, button, input, select')) return
   // Skip the frameless resize border zone, or native resize and JS drag both fire.
   const cx = e.clientX, cy = e.clientY
   const ww = window.innerWidth, wh = window.innerHeight
@@ -96,6 +131,10 @@ let usageEnabled = true
 function applySettings(s) {
   if (!s) return
   if (typeof s.theme === 'string') bezel.setAttribute('data-theme', s.theme)
+  if (Number.isFinite(s.textScale) && s.textScale !== textScale) {
+    textScale = s.textScale
+    fitBezel()
+  }
   if (typeof s.claudeUsage === 'boolean') {
     usageEnabled = s.claudeUsage
     render()
@@ -150,8 +189,24 @@ function acctHtml() {
     `<div class="row" data-role="${role}"><span class="row-label">${label}</span>` +
     `<div class="track"><div class="fill"></div></div>` +
     `<span class="row-val">--%</span><span class="row-reset"></span></div>`
-  return `<div class="acct"><span class="acct-name"></span>` +
+  return `<div class="acct"><span class="acct-head">` +
+    `<span class="acct-name"></span><span class="acct-tag">ACTIVE</span>` +
+    `<span class="acct-age"></span></span>` +
     row('Session', 's5') + row('Weekly', 's7') + row('Scoped', 'sf') + `</div>`
+}
+
+// How old the account's numbers are. Every account is polled, not just the
+// active one, but cswap refetches each on its own ~5 min schedule, so the chip
+// says how current each row actually is rather than implying all are equal.
+const STALE_MS = 12 * 60000
+
+function fmtAge(fetchedMs) {
+  if (!Number.isFinite(fetchedMs)) return { text: '', stale: false }
+  const sec = Math.max(0, (Date.now() - fetchedMs) / 1000)
+  if (sec < 75) return { text: 'live', stale: false }
+  const min = Math.floor(sec / 60)
+  if (min < 60) return { text: min + 'm ago', stale: sec * 1000 > STALE_MS }
+  return { text: Math.floor(min / 60) + 'h ago', stale: true }
 }
 
 function paintRow(acctEl, role, pct, resetMs) {
@@ -184,13 +239,24 @@ function renderAccounts(swap) {
     // usageStatus !== 'ok' → cswap couldn't fetch usage; dim = "no data", not 0%.
     block.classList.toggle('na', a.usageStatus !== 'ok')
 
-    // The account name doubles as the cswap switch control.
+    // Display only. Switching accounts is a right-click menu item in the main
+    // process: a click target here sat under the pointer during a drag and
+    // fired cswap by accident.
     const name = block.querySelector('.acct-name')
-    name.textContent = (a.active ? '▸ ' : '') + a.number + ' · ' + a.alias
-    const switchable = !a.active
-    name.classList.toggle('switchable', switchable)
-    name.title = switchable ? 'Switch to this account' : ''
-    name.onclick = switchable ? () => window.claudeOMeter?.claudeSwapSwitch?.(a.number) : null
+    name.textContent = a.number + ' · ' + a.alias
+    // Which account cswap is currently pointed at. Said in a word, not in a
+    // colour and an arrow — nobody reads a legend that isn't there.
+    block.querySelector('.acct-tag').style.display = a.active ? '' : 'none'
+
+    const age = block.querySelector('.acct-age')
+    if (a.usageStatus === 'ok') {
+      const f = fmtAge(a.usageFetchedMs)
+      age.textContent = f.text
+      age.classList.toggle('stale', f.stale)
+    } else {
+      age.textContent = 'no data'
+      age.classList.add('stale')
+    }
 
     paintRow(block, 's5', a.fiveHourPct, a.fiveHourResetMs)
     paintRow(block, 's7', a.sevenDayPct, a.sevenDayResetMs)

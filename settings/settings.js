@@ -10,6 +10,7 @@ const el = {
   tray: document.getElementById('tray'),
   ontop: document.getElementById('ontop'),
   usage: document.getElementById('usage'),
+  textscale: document.getElementById('textscale'),
   close: document.getElementById('btn-close'),
   themePick: document.getElementById('theme-pick'),
   acctStatus: document.getElementById('acct-status'),
@@ -54,6 +55,10 @@ function fill(s) {
   el.tray.checked = !!s.minimizeToTray
   el.ontop.checked = !!s.alwaysOnTop
   el.usage.checked = !!s.claudeUsage
+  // Main is the authority on the allowed values; an unknown one falls back to
+  // 100% rather than leaving the dropdown showing something it will not honour.
+  const scale = String(s.textScale ?? 1)
+  el.textscale.value = [...el.textscale.options].some(o => o.value === scale) ? scale : '1'
   const tid = s.theme || 'cream'
   el.themePick.querySelectorAll('.theme-swatch').forEach(sw => {
     sw.classList.toggle('active', sw.dataset.theme === tid)
@@ -66,6 +71,7 @@ function push() {
     minimizeToTray: el.tray.checked,
     alwaysOnTop: el.ontop.checked,
     claudeUsage: el.usage.checked,
+    textScale: Number(el.textscale.value),
   })
 }
 
@@ -86,6 +92,7 @@ el.autostart.addEventListener('change', push)
 el.tray.addEventListener('change', push)
 el.ontop.addEventListener('change', push)
 el.usage.addEventListener('change', push)
+el.textscale.addEventListener('change', push)
 
 // ── claude.ai account login ────────────────────────────────────────
 let loggedIn = false

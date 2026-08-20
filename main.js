@@ -50,10 +50,43 @@ function widgetSize() {
   return { width: 400, height: 96 + 96 * n }
 }
 
+// Window floor, derived from the renderer's zoom curve rather than guessed. The
+// renderer zooms type by (window/native)^ZOOM_CURVE x textScale, so the layout
+// box it lays out against is native^C x window^(1-C) / textScale. Requiring that
+// box to stay at least MIN_BOX of native and solving for window gives
+// window >= native x (MIN_BOX x textScale)^(1/(1-C)). Bigger type therefore needs
+// a bigger window to show the same rows — at 150% and the old flat 0.75 floor the
+// account rows overlapped the footer.
+const ZOOM_CURVE = 0.6   // keep in sync with renderer/renderer.js
+const MIN_BOX = 0.88     // how far the layout may compress before rows collide
+
+function minFactor() {
+  const scale = (settings && settings.textScale) || 1
+  return Math.pow(MIN_BOX * scale, 1 / (1 - ZOOM_CURVE))
+}
+
+function applyMinimumSize() {
+  if (!win || win.isDestroyed()) return
+  const sz = widgetSize()
+  const f = minFactor()
+  // Never demand more than the screen can give, or the window becomes
+  // unmovable off the bottom of a small display.
+  const area = screen.getDisplayMatching(win.getBounds()).workAreaSize
+  const minW = Math.min(Math.round(sz.width * f), area.width)
+  const minH = Math.min(Math.round(sz.height * f), area.height)
+  win.setMinimumSize(minW, minH)
+  // setMinimumSize does not grow a window that is already smaller, so raising
+  // the text size on a small window would leave the rows clipped until the
+  // user nudged an edge.
+  const [w, h] = win.getSize()
+  if (w < minW || h < minH) win.setSize(Math.max(w, minW), Math.max(h, minH))
+}
+
 // Resize the widget window to fit the account count, keeping its center fixed.
 function fitWidget() {
   if (!win || win.isDestroyed()) return
   const sz = widgetSize()
+  applyMinimumSize()
   const [w, h] = win.getSize()
   if (w === sz.width && h === sz.height) return
   const [x, y] = win.getPosition()
@@ -75,9 +108,33 @@ function loadSwapCache() {
   } catch { /* no cache yet */ }
 }
 
+const acctSig = (p) => (p && p.ok && Array.isArray(p.accounts)
+  ? p.accounts.map(a => a.number + ':' + a.alias + ':' + (a.active ? 1 : 0)).join('|')
+  : '')
+
+// The OAuth provider and cswap poll the SAME per-token usage endpoint, which
+// budgets ~28-30 requests/hour per token and stays saturated for up to an hour
+// once tripped (see claude_swap/poll_policy.py). In multi-account mode the
+// renderer shows the cswap payload and discards the provider's readings, so
+// that poll was spending a third of the budget on data nobody paints — and the
+// 429 backoff it provoked is what pushed cswap out to 5-10 minute intervals.
+// Run one or the other, never both. The decision is made before the service is
+// constructed too — the provider fetches inside start(), so deciding afterwards
+// still spends one request.
+function wantOAuthProvider() {
+  const multi = !!(lastClaudeSwap && lastClaudeSwap.ok &&
+    Array.isArray(lastClaudeSwap.accounts) && lastClaudeSwap.accounts.length)
+  return !!(settings && settings.claudeUsage) && !multi
+}
+
+function applyUsageSource() {
+  if (usageService) usageService.setClaudeUsage(wantOAuthProvider())
+}
+
 function sendClaudeSwap(payload) {
   const prev = lastClaudeSwap && lastClaudeSwap.ok ? lastClaudeSwap.accounts.length : 0
   const next = payload && payload.ok ? payload.accounts.length : 0
+  const sigChanged = acctSig(payload) !== acctSig(lastClaudeSwap)
   lastClaudeSwap = payload
   // Persist live data for next launch — never mock data, it would poison the
   // cache real launches paint from.
@@ -85,6 +142,9 @@ function sendClaudeSwap(payload) {
     try { fs.writeFileSync(swapCacheFile, JSON.stringify(payload)) } catch { /* non-fatal */ }
   }
   if (next !== prev) fitWidget()
+  applyUsageSource()
+  if (sigChanged) buildTrayMenu()
+  refreshTray()
   if (win && !win.isDestroyed()) win.webContents.send('claude-swap', payload)
 }
 
@@ -98,6 +158,44 @@ function stopSwapCollector() {
   claudeSwapHandle.stop()
   claudeSwapHandle = null
   sendClaudeSwap({ ok: false, ts: Date.now(), accounts: [] })
+}
+
+// ── Tray tooltip ─────────────────────────────────────────────
+// The icon is static. A gauge drawn at 16px is unreadable at low usage — a few
+// percent is a stroke a couple of pixels long, which on a real taskbar reads as
+// a stray dot rather than an icon. The live numbers live in the tooltip instead.
+let trayTip = undefined     // the tooltip currently displayed
+
+function fmtMins(mins) {
+  const m = Math.max(0, Math.round(mins))
+  if (m >= 2880) return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`
+}
+
+function trayTooltip() {
+  if (!(settings && settings.claudeUsage)) return 'Claude-O-Meter — usage polling off'
+  if (lastClaudeSwap && lastClaudeSwap.ok && lastClaudeSwap.accounts.length) {
+    const a = lastClaudeSwap.accounts.find(x => x.active) || lastClaudeSwap.accounts[0]
+    const bits = [`${a.alias} · session ${a.fiveHourPct == null ? '--' : a.fiveHourPct + '%'}`]
+    if (a.sevenDayPct != null) bits.push(`weekly ${a.sevenDayPct}%`)
+    if (a.fiveHourResetMs != null) bits.push(`resets ${fmtMins((a.fiveHourResetMs - Date.now()) / 60000)}`)
+    return 'Claude-O-Meter — ' + bits.join(' · ')
+  }
+  const get = (id) => { const r = lastReadings.find(x => x.id === id); return r && Number.isFinite(r.value) ? r.value : null }
+  const s5 = get('/claude/session/pct'), s7 = get('/claude/week/pct'), rs = get('/claude/session/reset')
+  if (s5 == null && s7 == null) return 'Claude-O-Meter — waiting for usage'
+  const bits = []
+  if (s5 != null) bits.push(`session ${Math.round(s5)}%`)
+  if (s7 != null) bits.push(`weekly ${Math.round(s7)}%`)
+  if (rs != null) bits.push(`resets ${fmtMins(rs)}`)
+  return 'Claude-O-Meter — ' + bits.join(' · ')
+}
+
+function refreshTray() {
+  if (!tray || tray.isDestroyed()) return
+  // Called on the 1s usage tick, so skip the call unless the text moved.
+  const tip = trayTooltip()
+  if (tip !== trayTip) { tray.setToolTip(tip); trayTip = tip }
 }
 
 // ── About dialog ───────────────────────────────────────────────────
@@ -131,6 +229,40 @@ async function showAbout(parent) {
   if (response === 1) clipboard.writeText(`Claude-O-Meter ${app.getVersion()}\n${report}`)
 }
 
+// Plain-language guide to what the panel shows. The meters are self-evident;
+// the freshness chip and the multi-account rules are not.
+function showHelp(parent) {
+  const detail = [
+    'SESSION  your 5-hour rolling limit. WEEKLY  the 7-day limit.',
+    'A third row appears only when the account has a model-scoped weekly limit,',
+    'and it labels itself with that model.',
+    '',
+    'With the cswap CLI installed, every connected account gets its own block.',
+    'ACTIVE marks the account Claude Code is currently signed in as.',
+    '',
+    'The chip after each account name is how old that account\'s figures are:',
+    'live (under 75s), then 3m ago, 5m ago and so on. Three minutes is the',
+    'floor — Claude\'s usage endpoint budgets about 28-30 requests an hour per',
+    'account, so nothing can poll faster without getting the account blocked.',
+    'An idle account drifts further out while its usage is not moving. The chip',
+    'turns amber past 12 minutes, which usually means the account is in backoff.',
+    '',
+    'Switch accounts from Settings -> Switch Account. Resize freely: the bars',
+    'stretch and the text scales on its own, and Settings -> Text Size sets how',
+    'large that text gets.',
+  ].join('\n')
+  const opts = {
+    type: 'info',
+    title: 'How to read this',
+    message: 'Claude-O-Meter',
+    detail,
+    buttons: ['OK'],
+    noLink: true,
+  }
+  if (parent && !parent.isDestroyed()) dialog.showMessageBox(parent, opts)
+  else dialog.showMessageBox(opts)
+}
+
 // ── Widget window ──────────────────────────────────────────────────
 function createWindow() {
   win = new BrowserWindow({
@@ -140,8 +272,9 @@ function createWindow() {
     transparent: true,
     alwaysOnTop: !!(settings && settings.alwaysOnTop),
     resizable: true,
-    minWidth: 240,
-    minHeight: 120,
+    // Replaced by applyMinimumSize() as soon as the account count is known.
+    minWidth: Math.round(BASE_SIZE.width * minFactor()),
+    minHeight: Math.round(BASE_SIZE.height * minFactor()),
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -157,7 +290,8 @@ function createWindow() {
     usageService = usage.start((payload) => {
       lastReadings = (payload && payload.readings) || []
       if (win && !win.isDestroyed()) win.webContents.send('usage-data', payload)
-    }, { claudeUsage: !!(settings && settings.claudeUsage) })
+      refreshTray()
+    }, { claudeUsage: wantOAuthProvider() })
     startSwapCollector()
     fitWidget()
   })
@@ -193,18 +327,28 @@ function openSettings() {
 }
 
 // ── Tray ───────────────────────────────────────────────────────────
-function createTray() {
-  tray = new Tray(path.join(__dirname, 'assets', 'images', 'tray-icon.ico'))
-  tray.setToolTip('Claude-O-Meter')
+// A tray context menu is set once, not built per popup, so it is rebuilt
+// whenever the account list changes — otherwise the Switch Account submenu
+// would still list whatever cswap reported at launch.
+function buildTrayMenu() {
+  if (!tray || tray.isDestroyed()) return
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show Widget', click: () => { if (!win) createWindow(); else win.show() } },
-    { label: 'Hide Widget', click: () => { if (win) win.hide() } },
-    { label: 'Refresh Now', click: () => { if (claudeSwapHandle) claudeSwapHandle.refresh() } },
-    { label: 'Settings',    click: () => openSettings() },
-    { label: 'About',       click: () => showAbout(win) },
+    { label: 'Show Widget',    click: () => { if (!win) createWindow(); else win.show() } },
+    { label: 'Hide Widget',    click: () => { if (win) win.hide() } },
+    { label: 'Refresh Now',    click: () => { if (claudeSwapHandle) claudeSwapHandle.refresh() } },
+    { label: 'Switch Account', submenu: switchMenuItems() },
+    { label: 'Settings',       click: () => openSettings() },
+    { label: 'About',          click: () => showAbout(win) },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]))
+}
+
+function createTray() {
+  tray = new Tray(path.join(__dirname, 'assets', 'images', 'tray-icon.ico'))
+  tray.setToolTip('Claude-O-Meter')
+  refreshTray()
+  buildTrayMenu()
   tray.on('double-click', () => {
     if (!win) { createWindow(); return }
     win.isVisible() ? win.hide() : win.show()
@@ -262,7 +406,14 @@ const DEFAULT_SETTINGS = {
   alwaysOnTop: false,
   claudeUsage: true,
   theme: 'cream',
+  textScale: 1,
 }
+
+// Offered text sizes. A free-form number would let a bad value shrink the type
+// to nothing, and the widget has no way back from that without editing JSON.
+const TEXT_SCALES = [
+  [0.9, 'Small'], [1, 'Normal'], [1.15, 'Large'], [1.3, 'Larger'], [1.5, 'Largest'],
+]
 
 const THEMES = [
   ['cream', 'Cream'], ['dark', 'Dark'], ['midnight', 'Midnight'], ['phosphor', 'Phosphor'],
@@ -277,6 +428,7 @@ function validateSettings(obj) {
     if (typeof obj.autostart === 'boolean') s.autostart = obj.autostart
     if (typeof obj.minimizeToTray === 'boolean') s.minimizeToTray = obj.minimizeToTray
     if (typeof obj.alwaysOnTop === 'boolean') s.alwaysOnTop = obj.alwaysOnTop
+    if (TEXT_SCALES.some(([v]) => v === obj.textScale)) s.textScale = obj.textScale
     if (typeof obj.claudeUsage === 'boolean') s.claudeUsage = obj.claudeUsage
     if (THEMES.some(([v]) => v === obj.theme)) s.theme = obj.theme
   }
@@ -313,27 +465,51 @@ ipcMain.on('settings:set', (_e, incoming) => {
   settings = validateSettings({ ...settings, ...incoming })
   saveSettings()
   applySettings()
-  if (usageService) usageService.setClaudeUsage(settings.claudeUsage)
+  applyMinimumSize()
+  applyUsageSource()
   if (settings.claudeUsage) startSwapCollector()
   else stopSwapCollector()
+  refreshTray()
   broadcastSettings()
 })
 
 ipcMain.on('settings:close', () => { if (settingsWin) settingsWin.close() })
 
 // ── Right-click menu ───────────────────────────────────────────────
-ipcMain.on('widget:context-menu', () => {
-  if (!win || win.isDestroyed()) return
-  const themeItems = THEMES.map(([value, label]) => ({
+// ── Header menus ───────────────────────────────────────────────────
+// The two header buttons replace the right-click menu: everything that used to
+// be behind a right-click is under Settings or Help, so nothing is reachable
+// only by a gesture the widget never advertised. Popped at window-relative
+// coordinates sent by the renderer, so each menu drops under its own button.
+function themeMenuItems() {
+  return THEMES.map(([value, label]) => ({
     label,
     type: 'radio',
     checked: value === ((settings && settings.theme) || 'cream'),
     click: () => { settings.theme = value; saveSettings(); broadcastSettings() },
   }))
-  Menu.buildFromTemplate([
-    { label: 'Refresh Now', click: () => { if (claudeSwapHandle) claudeSwapHandle.refresh() } },
-    { label: 'Settings',    click: () => openSettings() },
-    { label: 'Colors',      submenu: themeItems },
+}
+
+function textScaleMenuItems() {
+  const current = (settings && settings.textScale) || 1
+  return TEXT_SCALES.map(([value, label]) => ({
+    label: `${label}  (${Math.round(value * 100)}%)`,
+    type: 'radio',
+    checked: value === current,
+    click: () => {
+      settings.textScale = value
+      saveSettings()
+      applyMinimumSize()
+      broadcastSettings()
+    },
+  }))
+}
+
+function settingsMenu() {
+  return Menu.buildFromTemplate([
+    { label: 'Settings…',      click: () => openSettings() },
+    { label: 'Text Size',      submenu: textScaleMenuItems() },
+    { label: 'Colors',         submenu: themeMenuItems() },
     {
       label: 'Always on Top',
       type: 'checkbox',
@@ -346,28 +522,29 @@ ipcMain.on('widget:context-menu', () => {
       },
     },
     { type: 'separator' },
-    { label: 'About',    click: () => showAbout(win) },
-    { label: 'Minimize', click: () => win.minimize() },
-    { label: 'Close',    click: () => win.close() },
-  ]).popup({ window: win })
+    { label: 'Refresh Now',    click: () => { if (claudeSwapHandle) claudeSwapHandle.refresh() } },
+    { label: 'Switch Account', submenu: switchMenuItems() },
+    { type: 'separator' },
+    { label: 'Minimize',       click: () => win.minimize() },
+    { label: 'Close',          click: () => win.close() },
+  ])
+}
+
+function helpMenu() {
+  return Menu.buildFromTemplate([
+    { label: 'How to read this', click: () => showHelp(win) },
+    { label: 'About',            click: () => showAbout(win) },
+  ])
+}
+
+ipcMain.on('widget:menu', (_e, arg) => {
+  if (!win || win.isDestroyed()) return
+  const kind = arg && arg.kind
+  const x = Math.round(Number(arg && arg.x) || 0)
+  const y = Math.round(Number(arg && arg.y) || 0)
+  const menu = kind === 'help' ? helpMenu() : settingsMenu()
+  menu.popup({ window: win, x, y })
 })
-
-// ── Claude web login ───────────────────────────────────────────────
-// Required lazily so a broken/missing claude-web module can't kill startup.
-let claudeWeb = null
-function getClaudeWeb() {
-  if (!claudeWeb) {
-    claudeWeb = require('./src/sensors/claude-web')
-    claudeWeb.onSessionExpired(() => sendClaudeStatus({ loggedIn: false }))
-  }
-  return claudeWeb
-}
-
-function sendClaudeStatus(status) {
-  if (settingsWin && !settingsWin.isDestroyed()) {
-    settingsWin.webContents.send('claude:status-change', status)
-  }
-}
 
 ipcMain.handle('claude:login', async () => {
   try {
@@ -390,22 +567,34 @@ ipcMain.handle('claude:status', () => {
   catch { return { loggedIn: false } }
 })
 
-// ── Claude swap IPC: switch the active cswap account ───────────────
-// Fixed argv arrays only, never shell-interpolated; the number is validated
-// against the same rule cswap itself enforces.
+// ── Claude swap: switch the active cswap account ───────────────────
+// Menu-driven only. The widget used to switch on a click of the account name,
+// which put a live cswap invocation under the pointer while dragging the
+// window — switching now costs a right-click and a menu pick, so it cannot
+// happen by accident. Fixed argv arrays only, never shell-interpolated; the
+// number is validated against the same rule cswap itself enforces.
 const CSWAP_NUM_RE = /^[0-9]+$/
-ipcMain.handle('claude:swap-switch', (_e, number) => new Promise((resolve) => {
-  if (!CSWAP_NUM_RE.test(String(number))) return resolve({ ok: false, error: 'invalid account number' })
+function swapSwitch(number, done) {
+  if (!CSWAP_NUM_RE.test(String(number))) return done && done({ ok: false, error: 'invalid account number' })
   const { file, args } = cswapCmd(['switch', String(number)])
   execFile(file, args, { windowsHide: true, timeout: 15000, maxBuffer: 1024 * 1024 }, (err, _stdout, stderr) => {
     if (claudeSwapHandle) claudeSwapHandle.refresh()
-    resolve(err ? { ok: false, error: String(stderr || err.message).slice(0, 300) } : { ok: true })
+    if (done) done(err ? { ok: false, error: String(stderr || err.message).slice(0, 300) } : { ok: true })
   })
-}))
+}
 
-ipcMain.handle('claude:swap-refresh', () => {
-  if (claudeSwapHandle) claudeSwapHandle.refresh()
-})
+// Built fresh on every popup so the list matches the last cswap poll.
+function switchMenuItems() {
+  const accounts = (lastClaudeSwap && lastClaudeSwap.ok && lastClaudeSwap.accounts) || []
+  if (!accounts.length) return [{ label: 'No accounts detected', enabled: false }]
+  return accounts.map(a => ({
+    label: `${a.number} · ${a.alias}${a.active ? '  (active)' : ''}`,
+    type: 'radio',
+    checked: !!a.active,
+    enabled: !a.active,
+    click: () => swapSwitch(a.number),
+  }))
+}
 
 // ── App lifecycle ──────────────────────────────────────────────────
 app.whenReady().then(() => {
