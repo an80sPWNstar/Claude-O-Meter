@@ -12,7 +12,8 @@ Frameless desktop widget showing Claude plan usage limits and reset countdowns.
   widget and on the tray, so nothing in the panel itself can fire `cswap switch` on a stray click.
   With cswap present the app's own OAuth poll is suspended, since both share one per-token request
   budget and only the cswap figures get painted.
-- **Window behavior** — frameless, transparent, draggable by its body, resizable with scale-to-fit zoom. Optional always-on-top. Resizes itself to fit the account count in multi-account mode.
+- **Window behavior** — frameless, transparent, draggable by its body. Optional always-on-top.
+  Resizes itself to fit the account count in multi-account mode.
 - **Settings and Help in the header** — the two header buttons carry everything: text size, theme,
   always-on-top, refresh, account switching, a plain-language guide to the panel, and About. There
   is no right-click menu.
@@ -20,27 +21,161 @@ Frameless desktop widget showing Claude plan usage limits and reset countdowns.
   sub-linearly so it stays readable at small sizes. Settings → Text Size raises the whole curve
   (90%–150%) and grows the window's minimum to match.
 - **Tray tooltip** — hovering the tray icon gives the active account's session and weekly percentages and the reset countdown, without opening the window.
-- **Tray menu** — show/hide widget, refresh now, settings, about, quit. The app stays resident in the tray; it only quits from the tray or the right-click menu.
-- **8 themes** — cream, dark, midnight, phosphor, outrun, cinch, porsche, temple. Picked from the settings window or by right-clicking the widget.
+- **Tray menu** — show/hide widget, refresh now, switch account, settings, about, quit. The app
+  stays resident in the tray and only quits from there.
+- **8 themes** — cream, dark, midnight, phosphor, outrun, cinch, porsche, temple. Picked from the
+  settings window or from Settings → Colors in the header.
 
 ## Install
 
+### Easiest — download a release
+
+Grab the file for your platform from the [Releases page](https://github.com/an80sPWNstar/Claude-O-Meter/releases):
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows 10/11 | `Claude-O-Meter Setup <version>.exe` | one-click, per-user, no admin |
+| Debian / Ubuntu / Mint / Pop!_OS | `claude-o-meter_<version>_amd64.deb` | pulls its own dependencies |
+| Any other Linux | `Claude-O-Meter-<version>.AppImage` | one file, no install |
+| macOS | — | no prebuilt build; see [macOS](#macos) |
+
+Nothing is published yet — until a release exists, use the per-platform steps below or
+[build from source](#build-from-source-any-platform).
+
+### Windows
+
+Run the installer. It is per-user, so it never asks for admin rights, and it lands in
+`%LOCALAPPDATA%\Programs\claude-o-meter`. The app starts on finish and lives in the tray.
+
+Quit any running copy from its tray menu **before** reinstalling — NSIS cannot replace a running
+`Claude-O-Meter.exe` and the install fails partway.
+
+Uninstall from Settings → Apps → Installed apps, like any other program.
+
+To build the installer yourself: `npm ci && npm run build`, which writes the exe to `dist/`.
+
+### Linux — Debian, Ubuntu, Mint, Pop!_OS
+
 ```bash
-npm install
-npm start
+sudo apt install ./claude-o-meter_<version>_amd64.deb
 ```
 
-Windows is the primary target (NSIS installer). Linux packages build too — `npm run build:linux`
-produces an AppImage and a .deb; on a Windows box run that inside WSL2, since electron-builder needs
-a Linux filesystem for the AppImage's permission bits. On Linux the tray takes the PNG icon rather
-than the .ico, "Start with Windows" is disabled because Electron only implements it on Windows and
-macOS, and `cswap auto` detection falls back from PowerShell to `pgrep`.
+Use `apt install ./file.deb` rather than `dpkg -i`, so the dependencies come along:
+`libgtk-3-0`, `libnotify4`, `libnss3`, `libxss1`, `libxtst6`, `xdg-utils`, `libatspi2.0-0`,
+`libuuid1`, `libsecret-1-0`. The last one matters — `libsecret` is what Electron's `safeStorage`
+uses to encrypt a claude.ai session key, and without a keyring the app still runs but cannot store
+that login.
 
-macOS cannot be built from Windows or Linux at all: `.dmg` needs `hdiutil` and the bundle needs
-`codesign`, both Apple-only. `.github/workflows/build.yml` builds it on a GitHub `macos-latest`
-runner instead — run it manually from the Actions tab. Those artifacts are unsigned, so Gatekeeper
-blocks the first launch; right-click → Open, or
-`xattr -dr com.apple.quarantine "/Applications/Claude-O-Meter.app"`.
+The app appears in your launcher as Claude-O-Meter. Remove it with
+`sudo apt remove claude-o-meter`.
+
+### Linux — Arch, Manjaro, EndeavourOS
+
+There is no AUR package. Use the AppImage:
+
+```bash
+sudo pacman -S fuse2                 # AppImages need FUSE 2, not the FUSE 3 that ships by default
+chmod +x Claude-O-Meter-<version>.AppImage
+./Claude-O-Meter-<version>.AppImage
+```
+
+If you would rather not install `fuse2`, the AppImage can unpack itself instead:
+
+```bash
+./Claude-O-Meter-<version>.AppImage --appimage-extract-and-run
+```
+
+Or build from source with `sudo pacman -S nodejs npm` and the steps below.
+
+### Linux — Fedora, RHEL, openSUSE
+
+Same AppImage, with the FUSE 2 compatibility package:
+
+```bash
+sudo dnf install fuse fuse-libs      # openSUSE: sudo zypper install fuse
+chmod +x Claude-O-Meter-<version>.AppImage
+./Claude-O-Meter-<version>.AppImage
+```
+
+An `.rpm` is not published, but the tooling can produce one — `npx electron-builder --linux rpm` on
+a machine with `rpm-build` installed.
+
+### Linux — any distro (AppImage)
+
+The AppImage is self-contained and needs no install: mark it executable and run it. Two things are
+worth knowing.
+
+**FUSE 2 is required.** Most current distros ship FUSE 3, and the AppImage fails with
+`dlopen(): error loading libfuse.so.2`. Either install the compatibility package for your distro
+(above) or run with `--appimage-extract-and-run`, which unpacks to a temp dir and skips FUSE
+entirely.
+
+**Desktop integration is not automatic.** The AppImage does not create a menu entry by itself;
+[AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) does that if you want it.
+
+### macOS
+
+There is no macOS build, and one cannot be produced on Windows or Linux: `.dmg` creation needs
+Apple's `hdiutil` and the app bundle needs `codesign`, so electron-builder refuses the target
+anywhere but macOS.
+
+On a Mac, build it yourself:
+
+```bash
+npm ci
+npm run build:mac        # dist/Claude-O-Meter-<version>.dmg
+```
+
+The result is **unsigned**, so Gatekeeper blocks the first launch. Right-click the app → Open (which
+offers an override the double-click path does not), or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Claude-O-Meter.app"
+```
+
+A signed, notarized build needs a paid Apple Developer account. Without a Mac at hand, a GitHub
+Actions `macos-latest` runner can do the build instead.
+
+**Nobody has run this on macOS yet.** It should work — the code is platform-neutral apart from the
+tray icon and the autostart toggle — but the menu bar icon in particular would likely want a
+monochrome template image before it looks right.
+
+### Build from source (any platform)
+
+Needs Node 22 or newer.
+
+```bash
+git clone https://github.com/an80sPWNstar/Claude-O-Meter.git
+cd Claude-O-Meter
+npm ci
+npm start                # run it directly, no packaging
+```
+
+Then, for an installer: `npm run build` (Windows), `npm run build:linux` (AppImage + deb), or
+`npm run build:mac` (dmg, macOS only).
+
+Building the **Linux** packages from a Windows box works through WSL2, but copy the checkout into
+the Linux filesystem first — building on `/mnt/c` or `/mnt/e` loses the executable bits the AppImage
+needs:
+
+```bash
+cp -r /mnt/e/path/to/Claude-O-Meter ~/build && cd ~/build
+rm -rf node_modules dist && npm install
+npm run build:linux
+```
+
+If `npm start` does nothing at all, see the Electron extraction gotcha under
+[Development](#development).
+
+### After installing
+
+Neither is required, but both add something:
+
+- **Claude Code** — if it is installed and logged in, the widget reads its OAuth token and needs no
+  setup of its own. Otherwise use Settings → *Log in with Claude account*.
+- **[cswap](https://github.com/realiti4/claude-swap)** (`claude-swap`, installed with
+  `uv tool install claude-swap`) — the multi-account switcher for Claude Code. With it installed,
+  every connected account gets its own meter block.
 
 ## How usage data is found
 
@@ -48,7 +183,7 @@ Sources are tried in this order:
 
 1. **Claude Code OAuth** — reads the access token from `~/.claude/.credentials.json` and polls `https://api.anthropic.com/api/oauth/usage` every 5 minutes. The token is re-read each poll, so Claude Code's own refresh is picked up automatically.
 2. **claude.ai cookie session** — used when no OAuth token exists. Log in through a popup; the `sessionKey` cookie is stored encrypted with Electron `safeStorage` and usage is fetched through a hidden Chromium window (a plain `fetch()` gets blocked by Cloudflare, a real page does not).
-3. **cswap CLI** — polls `cswap list --json` every 45 seconds. When it reports accounts, the multi-account view takes over from the single-account meters, and a footer dot indicates a running `cswap auto` daemon.
+3. **cswap CLI** — polls `cswap list --json` every 30 seconds. When it reports accounts, the multi-account view takes over from the single-account meters, and a footer dot indicates a running `cswap auto` daemon.
 
 Nothing is required: with no Claude Code install, no login, and no `cswap`, the widget just shows why it has no data.
 
@@ -56,7 +191,7 @@ Nothing is required: with no Claude Code install, no login, and no `cswap`, the 
 
 `cream` `dark` `midnight` `phosphor` `outrun` `cinch` `porsche` `temple`
 
-Change via the settings window or right-click → Colors.
+Change from the settings window, or Settings → Colors in the widget header.
 
 ## Configuration
 
