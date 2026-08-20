@@ -30,7 +30,17 @@ npm install
 npm start
 ```
 
-Windows only (the tray icon, the NSIS installer, and the `cswap auto` process detection are Windows-specific). The usage providers themselves are platform-neutral.
+Windows is the primary target (NSIS installer). Linux packages build too — `npm run build:linux`
+produces an AppImage and a .deb; on a Windows box run that inside WSL2, since electron-builder needs
+a Linux filesystem for the AppImage's permission bits. On Linux the tray takes the PNG icon rather
+than the .ico, "Start with Windows" is disabled because Electron only implements it on Windows and
+macOS, and `cswap auto` detection falls back from PowerShell to `pgrep`.
+
+macOS cannot be built from Windows or Linux at all: `.dmg` needs `hdiutil` and the bundle needs
+`codesign`, both Apple-only. `.github/workflows/build.yml` builds it on a GitHub `macos-latest`
+runner instead — run it manually from the Actions tab. Those artifacts are unsigned, so Gatekeeper
+blocks the first launch; right-click → Open, or
+`xattr -dr com.apple.quarantine "/Applications/Claude-O-Meter.app"`.
 
 ## How usage data is found
 

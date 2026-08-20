@@ -7,7 +7,9 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder --win",
-    "build:dir": "electron-builder --win --dir"
+    "build:dir": "electron-builder --win --dir",
+    "build:linux": "electron-builder --linux AppImage deb --publish never",
+    "build:mac": "electron-builder --mac --publish never"
   },
   "devDependencies": {
     "electron": "^43.4.1",
@@ -28,6 +30,26 @@
       "target": "nsis",
       "icon": "assets/images/app-icon.ico"
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/images/icon.png",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "maintainer": "Bryan Henson <an80sPWNstar@users.noreply.github.com>",
+      "syncDesktopName": true,
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/images/icon.png",
+      "category": "Utility",
+      "synopsis": "Desktop widget for Claude plan usage",
+      "description": "Frameless desktop widget showing Claude plan usage: the 5-hour session limit, the 7-day weekly limit, and any model-scoped weekly limit, with live reset countdowns."
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
@@ -35,6 +57,8 @@
     }
   },
   "author": "Bryan Henson",
+  "homepage": "https://github.com/an80sPWNstar/Claude-O-Meter",
+  "desktopName": "claude-o-meter.desktop",
   "license": "MIT",
   "private": true
 }

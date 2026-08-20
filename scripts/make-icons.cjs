@@ -4,6 +4,9 @@
 // Produces, from the geometry defined below rather than from exported artwork:
 //   assets/images/app-icon.ico   the cut C on a cream tile, 7 resolutions
 //   assets/images/tray-icon.ico  the same mark inverted on a terracotta tile
+//   assets/images/icon.png       1024px app icon — electron-builder derives the
+//                                Linux png set and the macOS .icns from it
+//   assets/images/tray-icon.png  32px tray icon; GTK trays will not take an .ico
 //
 // Everything is drawn with Canvas 2D in a hidden window, so there is no
 // dependency on ImageMagick or an SVG rasteriser. Design angles are measured
@@ -134,6 +137,9 @@ app.whenReady().then(async () => {
   const jobs = []
   for (const size of ICO_SIZES) jobs.push({ kind: 'app', size, m: appMetrics(size) })
   for (const size of ICO_SIZES) jobs.push({ kind: 'tray', size, m: appMetrics(size) })
+  // Standalone PNGs for Linux packaging and the GTK tray.
+  jobs.push({ kind: 'app', size: 1024, m: appMetrics(1024) })
+  for (const size of [32, 64]) jobs.push({ kind: 'tray', size, m: appMetrics(size) })
 
   const urls = await win.webContents.executeJavaScript(
     'window.render(' + JSON.stringify(jobs) + ')')
@@ -147,9 +153,14 @@ app.whenReady().then(async () => {
 
   fs.writeFileSync(path.join(IMAGES, 'app-icon.ico'), buildIco(appPngs))
   fs.writeFileSync(path.join(IMAGES, 'tray-icon.ico'), buildIco(trayPngs))
+  fs.writeFileSync(path.join(IMAGES, 'icon.png'), decode(urls[i++]))
+  fs.writeFileSync(path.join(IMAGES, 'tray-icon.png'), decode(urls[i++]))
+  fs.writeFileSync(path.join(IMAGES, 'tray-icon@2x.png'), decode(urls[i++]))
 
   const stat = (p) => fs.statSync(p).size
   console.log('app-icon.ico   ' + stat(path.join(IMAGES, 'app-icon.ico')) + ' bytes, ' + ICO_SIZES.length + ' sizes')
   console.log('tray-icon.ico  ' + stat(path.join(IMAGES, 'tray-icon.ico')) + ' bytes, ' + ICO_SIZES.length + ' sizes')
+  console.log('icon.png       ' + stat(path.join(IMAGES, 'icon.png')) + ' bytes, 1024px')
+  console.log('tray-icon.png  ' + stat(path.join(IMAGES, 'tray-icon.png')) + ' bytes, 32px (+@2x)')
   app.exit(0)
 })

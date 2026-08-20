@@ -26,6 +26,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const isDev = process.argv.includes('--dev')
+const CAN_AUTOSTART = process.platform === 'win32' || process.platform === 'darwin'
 const PRELOAD = path.join(__dirname, 'preload.js')
 const APP_ICON = path.join(__dirname, 'assets', 'images', 'app-icon.ico')
 
@@ -345,7 +346,9 @@ function buildTrayMenu() {
 }
 
 function createTray() {
-  tray = new Tray(path.join(__dirname, 'assets', 'images', 'tray-icon.ico'))
+  // GTK's tray takes a PNG; only Windows wants the .ico.
+  tray = new Tray(path.join(__dirname, 'assets', 'images',
+    process.platform === 'win32' ? 'tray-icon.ico' : 'tray-icon.png'))
   tray.setToolTip('Claude-O-Meter')
   refreshTray()
   buildTrayMenu()
@@ -449,7 +452,9 @@ function saveSettings() {
 // Autostart only registers when packaged — in dev it would register the bare
 // electron.exe binary.
 function applySettings() {
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.autostart })
+  // setLoginItemSettings is a no-op outside Windows and macOS, so the setting
+  // is only offered where it can actually take effect.
+  if (app.isPackaged && CAN_AUTOSTART) app.setLoginItemSettings({ openAtLogin: settings.autostart })
   if (win && !win.isDestroyed()) win.setAlwaysOnTop(!!settings.alwaysOnTop)
 }
 
@@ -459,7 +464,9 @@ function broadcastSettings() {
   }
 }
 
-ipcMain.handle('settings:get', () => ({ ...settings, isPackaged: app.isPackaged }))
+ipcMain.handle('settings:get', () => ({
+  ...settings, isPackaged: app.isPackaged, canAutostart: CAN_AUTOSTART,
+}))
 
 ipcMain.on('settings:set', (_e, incoming) => {
   settings = validateSettings({ ...settings, ...incoming })

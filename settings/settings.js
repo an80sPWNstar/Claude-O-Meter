@@ -77,9 +77,12 @@ function push() {
 
 window.claudeOMeter.getSettings().then((s) => {
   fill(s)
-  if (!s.isPackaged) {
+  if (!s.isPackaged || s.canAutostart === false) {
     el.autostart.disabled = true
     el.autostartRow.classList.add('disabled')
+    el.autostartHint.textContent = s.canAutostart === false
+      ? ' (not supported on this platform)'
+      : ' (installed builds only)'
     el.autostartHint.style.display = 'inline'
   }
 })

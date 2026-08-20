@@ -148,6 +148,12 @@ isn't blank for up to 45s), `claude-web.json` (session key, encrypted with `safe
 ## Commands
 - Run: `npm start` · DevTools: `npm run dev`
 - Installer: `npm run build` (NSIS exe into `dist/`) · unpacked: `npm run build:dir`
+- Linux: `npm run build:linux` (AppImage + deb). Run it **inside WSL2 from a Linux path**, not from
+  `/mnt/e` — copy the tree to `~` first. Building on the DrvFs mount loses the executable bits the
+  AppImage needs. WSL has its own node_modules, so `npm install` there once.
+- macOS: impossible on this machine — `.dmg` needs `hdiutil` and the bundle needs `codesign`, both
+  Apple-only, and electron-builder refuses the target off macOS. Use the manual
+  `.github/workflows/build.yml` run on a `macos-latest` runner. Artifacts are unsigned.
 - Mock 3 accounts without cswap: `CLAUDEOMETER_SWAP_MOCK=1`
 
 ## Icons and the tray
