@@ -134,6 +134,29 @@ that label turns orange, the account hasn't been able to check in for a while.
 **To switch accounts**, use Settings → Switch Account. It's deliberately not a click on the account
 name — that was too easy to hit by accident while dragging the window around.
 
+## If an account says "re-login needed"
+
+That label means cswap's stored login for that account was rejected — nothing is wrong with the
+widget, and re-installing it won't help. In a terminal:
+
+```
+claude          # then /login, as that account
+cswap add       # stores the fresh login
+```
+
+It usually happens when **two things keep separate copies of one account's login**. Claude rotates
+the token every time it's refreshed, and rotating it silently invalidates every other copy. The
+common way to end up there is a hand-rolled second profile — a `.cmd` or shell alias that sets
+`CLAUDE_CONFIG_DIR` to its own folder — running alongside cswap.
+
+If that's your setup, `cswap run <number> -- <args>` does the same job (Claude Code as a specific
+account, that terminal only) while keeping one copy of the login, which stops it recurring.
+
+Other labels on that row mean: `not logged in` (no credentials stored), `keychain locked` (macOS
+keychain unreadable), `switch to repair` (the live login belongs to a different account than cswap
+expects), `refreshing…` (temporary, clears itself), and `API key — no quota` (an API-key account has
+no subscription limits to show).
+
 ## Settings
 
 - Start with Windows *(Windows only, installed builds only)*

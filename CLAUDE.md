@@ -11,7 +11,15 @@ removed. tempsLCD-web is still the active home of the skin — a fix here does n
 and vice versa.
 
 ## Current Status
-**v0.3.0 — working, verified against live data.** Not yet released or tagged.
+**v0.3.1 — working, verified against live data.** Not yet released or tagged.
+
+v0.3.1 surfaces cswap's usage status on the account row instead of flattening all seven states to a
+dim `no data`. `relogin_required` in particular is a fixable condition with a two-command remedy,
+and a blank row sends the user looking for a bug in this app instead. The cause is always two
+holders of one rotating refresh token — cswap's own `session.py` warns about it: "two copies of one
+account can drift if the server rotates the refresh token". Seen live on 2026-08-20: a
+`CLAUDE_CONFIG_DIR=~/.claude-drcu` wrapper refreshed at 15:52 and invalidated the copy cswap had
+held since 07:57.
 
 v0.2.0 replaced the two icons inherited from tempsLCD-web. v0.3.0 made the tray icon static, put a
 freshness chip on every account, moved account switching out of the panel and into menus, stopped

@@ -18,10 +18,10 @@ const SWAP = {
       fiveHourPct: 11, sevenDayPct: 58, fiveHourResetMs: now + 225 * 60000,
       sevenDayResetMs: now + 525 * 60000, scopedName: null, scopedPct: null,
       scopedResetMs: null, usageFetchedMs: now - 40000 },
-    { number: 2, alias: 'drcu', active: false, disabled: false, usageStatus: 'ok',
-      fiveHourPct: 4, sevenDayPct: 13, fiveHourResetMs: now + 125 * 60000,
-      sevenDayResetMs: now + 8800 * 60000, scopedName: 'Fable', scopedPct: 19,
-      scopedResetMs: now + 8800 * 60000, usageFetchedMs: now - 200000 },
+    { number: 2, alias: 'drcu', active: false, disabled: false, usageStatus: 'relogin_required',
+      fiveHourPct: null, sevenDayPct: null, fiveHourResetMs: null,
+      sevenDayResetMs: null, scopedName: null, scopedPct: null,
+      scopedResetMs: null, usageFetchedMs: null },
   ],
 }
 

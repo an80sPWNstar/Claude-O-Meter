@@ -158,7 +158,7 @@ function mockPayload() {
         fiveHourPct: 97, sevenDayPct: 83, fiveHourResetMs: Date.now() + 12 * 60000,
         sevenDayResetMs: Date.now() + 52 * 3600000, scopedName: 'Fable', scopedPct: 88,
         scopedResetMs: Date.now() + 52 * 3600000, usageFetchedMs: Date.now() - 20000 },
-      { number: 3, alias: 'apikey', active: false, disabled: true, usageStatus: 'unavailable',
+      { number: 3, alias: 'drcu', active: false, disabled: false, usageStatus: 'relogin_required',
         fiveHourPct: null, sevenDayPct: null, fiveHourResetMs: null, sevenDayResetMs: null,
         scopedName: null, scopedPct: null, scopedResetMs: null, usageFetchedMs: null },
     ],

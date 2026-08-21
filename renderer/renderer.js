@@ -195,6 +195,25 @@ function acctHtml() {
     row('Session', 's5') + row('Weekly', 's7') + row('Scoped', 'sf') + `</div>`
 }
 
+// cswap distinguishes seven states behind "no usage"; flattening them to a dim
+// blank row makes a fixable problem look like a broken app. The wording is the
+// user-facing fix, not the internal name — 'relogin_required' means the stored
+// refresh token was rejected, and only a fresh login repairs it.
+const STATUS_LABEL = {
+  relogin_required: 're-login needed',
+  no_credentials: 'not logged in',
+  token_expired: 'refreshing…',
+  keychain_unavailable: 'keychain locked',
+  foreign_credential: 'switch to repair',
+  api_key: 'API key — no quota',
+  unavailable: 'no data',
+}
+
+// Which of those are the user's to fix, and so worth colouring.
+const STATUS_ACTIONABLE = new Set([
+  'relogin_required', 'no_credentials', 'keychain_unavailable', 'foreign_credential',
+])
+
 // How old the account's numbers are. Every account is polled, not just the
 // active one, but cswap refetches each on its own ~5 min schedule, so the chip
 // says how current each row actually is rather than implying all are equal.
@@ -254,8 +273,8 @@ function renderAccounts(swap) {
       age.textContent = f.text
       age.classList.toggle('stale', f.stale)
     } else {
-      age.textContent = 'no data'
-      age.classList.add('stale')
+      age.textContent = STATUS_LABEL[a.usageStatus] || 'no data'
+      age.classList.toggle('stale', STATUS_ACTIONABLE.has(a.usageStatus))
     }
 
     paintRow(block, 's5', a.fiveHourPct, a.fiveHourResetMs)
