@@ -151,6 +151,11 @@ isn't blank for up to 45s), `claude-web.json` (session key, encrypted with `safe
 - Linux: `npm run build:linux` (AppImage + deb). Run it **inside WSL2 from a Linux path**, not from
   `/mnt/e` — copy the tree to `~` first. Building on the DrvFs mount loses the executable bits the
   AppImage needs. WSL has its own node_modules, so `npm install` there once.
+- Windows exe from WSL: works, and is verified — `npx electron-builder --win nsis` inside the WSL
+  checkout produced a valid NSIS installer whose embedded version/product/company resources Windows
+  reads correctly. It needs `wine64` installed (`sudo apt install -y wine64`); without it the run
+  gets as far as a complete `dist/win-unpacked/` and then dies on `spawn wine ENOENT`, because the
+  icon/version stamping and signtool steps run under Wine.
 - macOS: impossible on this machine — `.dmg` needs `hdiutil` and the bundle needs `codesign`, both
   Apple-only, and electron-builder refuses the target off macOS. Use the manual
   `.github/workflows/build.yml` run on a `macos-latest` runner. Artifacts are unsigned.

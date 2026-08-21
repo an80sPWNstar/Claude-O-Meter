@@ -106,11 +106,17 @@ That runs the app straight from source. To make an installer instead:
 
 Finished files land in `dist/`.
 
-**On Windows with WSL, you can build everything except the Mac version.** Run the Linux build inside
-your WSL terminal, not PowerShell — and copy the project into your Linux home folder first
-(`cp -r /mnt/c/path/to/Claude-O-Meter ~/`), because building it on the Windows drive loses file
-permissions the AppImage needs. WSL needs its own `npm install`, since the one on the Windows side
-holds Windows-only files.
+**On Windows with WSL, you can build everything except the Mac version** — including the Windows
+`.exe`, from inside Linux. Two setup notes:
+
+- Run the builds in your WSL terminal, not PowerShell, and copy the project into your Linux home
+  folder first (`cp -r /mnt/c/path/to/Claude-O-Meter ~/`). Building on the Windows drive loses file
+  permissions the AppImage needs. WSL also needs its own `npm install` — the one on the Windows side
+  holds Windows-only files.
+- For the `.exe`, install Wine first: `sudo apt install -y wine64` on Ubuntu/Debian WSL. Without it
+  the build still produces a working `dist/win-unpacked/` folder you can copy to a Windows machine
+  and run, but it stops before making the installer — Wine is what writes the icon and version
+  details into the finished `.exe`.
 
 ## Using it
 
