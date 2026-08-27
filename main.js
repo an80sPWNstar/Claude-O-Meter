@@ -8,6 +8,7 @@ const os = require('os')
 const { execFile } = require('child_process')
 const usage = require('./src/sensors/service')
 const { startClaudeSwap } = require('./src/sensors/claude-swap')
+const { findCredentials } = require('./src/sensors/claude-credentials')
 const { cswapCmd } = require('./src/sensors/cswap-cmd')
 
 // One instance only. A second launch (installer auto-run + shortcut,
@@ -301,7 +302,10 @@ function createWindow() {
       lastReadings = (payload && payload.readings) || []
       if (win && !win.isDestroyed()) win.webContents.send('usage-data', payload)
       refreshTray()
-    }, { claudeUsage: wantOAuthProvider() })
+    }, {
+      claudeUsage: wantOAuthProvider(),
+      getAccess: () => ({ mode: settings.accessMode, credentialPath: settings.credentialPath }),
+    })
     startSwapCollector()
     fitWidget()
   })
@@ -313,6 +317,78 @@ function createWindow() {
   })
 }
 
+// ── First-run access choice ────────────────────────────────────────
+// Every platform gets asked. On Windows the installer usually answers first
+// and this never opens; an AppImage, a .deb or a run-from-source checkout has
+// no installer, so the same question is put here instead. Until it is
+// answered, `accessMode` is 'ask' and the credential sweep reads nothing.
+let onboardWin = null
+
+function openOnboarding() {
+  if (onboardWin && !onboardWin.isDestroyed()) { onboardWin.focus(); return }
+  onboardWin = new BrowserWindow({
+    width: 560,
+    height: 640,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: 'Claude-O-Meter — account access',
+    backgroundColor: '#141517',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  onboardWin.setMenuBarVisibility(false)
+  onboardWin.loadFile('onboarding/index.html')
+  onboardWin.on('closed', () => { onboardWin = null })
+}
+
+// Only the file, never a directory tree: the point of this mode is that the
+// app reads one thing the user pointed at.
+ipcMain.handle('access:pick-file', async (event) => {
+  const parent = BrowserWindow.fromWebContents(event.sender)
+  const result = await dialog.showOpenDialog(parent, {
+    title: 'Choose your Claude credentials file',
+    defaultPath: path.join(os.homedir(), '.claude'),
+    properties: ['openFile', 'showHiddenFiles'],
+    filters: [
+      { name: 'Credentials file', extensions: ['json'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  })
+  if (result.canceled || !result.filePaths.length) return ''
+  return result.filePaths[0]
+})
+
+// What a given choice would actually turn up, without committing to it. The
+// settings window uses this so 'Point me at the file' can be checked before it
+// is saved, instead of failing silently five minutes later.
+ipcMain.handle('access:probe', (_e, choice) => {
+  const mode = ACCESS_MODES.includes(choice && choice.mode) ? choice.mode : 'ask'
+  const credentialPath = typeof (choice && choice.credentialPath) === 'string' ? choice.credentialPath : ''
+  const found = findCredentials({ mode, credentialPath })
+  return { found: found.found, source: found.source, expired: found.expired, expiresAt: found.expiresAt }
+})
+
+ipcMain.handle('access:choose', (_e, choice) => {
+  const next = validateSettings({
+    ...settings,
+    accessMode: choice && choice.mode,
+    credentialPath: (choice && choice.credentialPath) || '',
+  })
+  // 'ask' is not a choice anyone can make from the UI — refuse it rather than
+  // save a state that reads as "answered" while behaving as "unanswered".
+  if (next.accessMode === 'ask') return { ok: false, error: 'no mode chosen' }
+  settings = next
+  saveSettings()
+  applyUsageSource()
+  broadcastSettings()
+  if (onboardWin && !onboardWin.isDestroyed()) onboardWin.close()
+  return { ok: true, mode: settings.accessMode }
+})
+
 // ── Settings window ────────────────────────────────────────────────
 function openSettings() {
   if (settingsWin) { settingsWin.focus(); return }
@@ -321,7 +397,9 @@ function openSettings() {
     // content width, and 380 minus the body's 20px padding leaves 340 — the
     // last swatch wrapped to its own row.
     width: 400,
-    height: 430,
+    // 430 before the account-access block; the three radios, the file row and
+    // the explanation line need the rest, and this window does not resize.
+    height: 620,
     icon: APP_ICON,
     frame: false,
     resizable: false,
@@ -412,7 +490,14 @@ ipcMain.on('widget:move', (_e, { dx, dy }) => {
 })
 
 // ── Settings: persistence + IPC ────────────────────────────────────
+// accessMode is deliberately 'ask': until someone says otherwise, the app
+// reads nothing. The installer writes a choice, and on platforms with no
+// installer the first-run window asks for one.
+const ACCESS_MODES = ['auto', 'manual', 'browser', 'ask']
+
 const DEFAULT_SETTINGS = {
+  accessMode: 'ask',
+  credentialPath: '',
   autostart: false,
   minimizeToTray: false,
   alwaysOnTop: false,
@@ -437,6 +522,8 @@ const THEMES = [
 function validateSettings(obj) {
   const s = { ...DEFAULT_SETTINGS }
   if (obj && typeof obj === 'object') {
+    if (ACCESS_MODES.includes(obj.accessMode)) s.accessMode = obj.accessMode
+    if (typeof obj.credentialPath === 'string') s.credentialPath = obj.credentialPath.slice(0, 4096)
     if (typeof obj.autostart === 'boolean') s.autostart = obj.autostart
     if (typeof obj.minimizeToTray === 'boolean') s.minimizeToTray = obj.minimizeToTray
     if (typeof obj.alwaysOnTop === 'boolean') s.alwaysOnTop = obj.alwaysOnTop
@@ -451,8 +538,55 @@ function loadSettings() {
   try {
     settings = validateSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')))
   } catch { settings = validateSettings(null) }
+  if (settings.accessMode === 'ask') adoptInstallerChoice()
 }
 
+// The Windows installer asks how the app should reach the account and drops the
+// answer next to the settings file, as key=value so a path full of backslashes
+// needs no escaping. Consumed once, and only while the setting is still
+// unanswered — Settings outranks it from then on.
+function adoptInstallerChoice() {
+  const file = path.join(app.getPath('userData'), 'install-prefs.txt')
+  let raw = null
+  try { raw = fs.readFileSync(file, 'utf8') }
+  catch { return }
+
+  const prefs = {}
+  for (const line of raw.split(/\r?\n/)) {
+    const eq = line.indexOf('=')
+    if (eq > 0) prefs[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+  }
+  settings = validateSettings({ ...settings, accessMode: prefs.accessMode, credentialPath: prefs.credentialPath })
+  if (settings.accessMode !== 'ask') saveSettings()
+  try { fs.unlinkSync(file) } catch { /* leaving it is harmless — it is consumed once either way */ }
+}
+
+// Sanitize untrusted settings into a complete, well-typed object.
+function validateSettings(obj) {
+  const s = { ...DEFAULT_SETTINGS }
+  if (obj && typeof obj === 'object') {
+    if (ACCESS_MODES.includes(obj.accessMode)) s.accessMode = obj.accessMode
+    if (typeof obj.credentialPath === 'string') s.credentialPath = obj.credentialPath.slice(0, 4096)
+    if (typeof obj.autostart === 'boolean') s.autostart = obj.autostart
+    if (typeof obj.minimizeToTray === 'boolean') s.minimizeToTray = obj.minimizeToTray
+    if (typeof obj.alwaysOnTop === 'boolean') s.alwaysOnTop = obj.alwaysOnTop
+    if (TEXT_SCALES.some(([v]) => v === obj.textScale)) s.textScale = obj.textScale
+    if (typeof obj.claudeUsage === 'boolean') s.claudeUsage = obj.claudeUsage
+    if (THEMES.some(([v]) => v === obj.theme)) s.theme = obj.theme
+  }
+  return s
+}
+
+function loadSettings() {
+  try {
+    settings = validateSettings(JSON.parse(fs.readFileSync(settingsFile, 'utf8')))
+  } catch { settings = validateSettings(null) }
+  if (settings.accessMode === 'ask') adoptInstallerChoice()
+}
+
+// The Windows installer asks how the app should reach the account and drops the
+// answer next to the settings file. It is consumed once, and only while the
+// setting is still unanswered — Settings always outranks it afterwards.
 function saveSettings() {
   try { fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2), 'utf8') }
   catch (err) { console.error('[settings] save failed:', err.message) }
@@ -562,6 +696,28 @@ ipcMain.on('widget:menu', (_e, arg) => {
   menu.popup({ window: win, x, y })
 })
 
+// ── claude.ai cookie session ───────────────────────────────────────
+// Lazy require: it pulls in electron's session/safeStorage and the feature is
+// only reachable from the settings window, so a machine that never opens it
+// never loads the module. Wrapped once here because three IPC handlers and the
+// session-expiry hook all need the same instance.
+let claudeWebMod = null
+function getClaudeWeb() {
+  if (!claudeWebMod) {
+    claudeWebMod = require('./src/sensors/claude-web')
+    // The session key can die between polls; the settings window is told so it
+    // can drop back to the logged-out prompt without being reopened.
+    claudeWebMod.onSessionExpired(() => sendClaudeStatus({ loggedIn: false }))
+  }
+  return claudeWebMod
+}
+
+function sendClaudeStatus(status) {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.webContents.send('claude:status-change', status)
+  }
+}
+
 ipcMain.handle('claude:login', async () => {
   try {
     const result = await getClaudeWeb().login()
@@ -576,6 +732,18 @@ ipcMain.handle('claude:logout', async () => {
   try { await getClaudeWeb().logout() }
   catch (err) { console.error('[claude-web] logout failed:', err.message) }
   sendClaudeStatus({ loggedIn: false })
+})
+
+// What the app can see about this machine's Claude logins. The settings
+// window needs it to explain an empty widget — a fresh install on a computer
+// with no cswap and a stale credentials file is indistinguishable, from the
+// outside, from a broken app.
+ipcMain.handle('claude:diagnostics', () => {
+  const swap = lastClaudeSwap && lastClaudeSwap.ok && Array.isArray(lastClaudeSwap.accounts)
+    ? { ok: true, accounts: lastClaudeSwap.accounts.length, error: null }
+    : { ok: false, accounts: 0, error: (lastClaudeSwap && lastClaudeSwap.error) || null }
+  const provider = usageService ? usageService.diagnostics() : { enabled: false }
+  return { swap, provider, pollEnabled: !!(settings && settings.claudeUsage), oauthActive: wantOAuthProvider() }
 })
 
 ipcMain.handle('claude:status', () => {
@@ -621,6 +789,8 @@ app.whenReady().then(() => {
   applySettings()
   createWindow()
   createTray()
+  // Asked once, before anything is read. The installer normally answers it.
+  if (settings.accessMode === 'ask') openOnboarding()
 })
 
 // Tray keeps the app alive — don't quit on last window close

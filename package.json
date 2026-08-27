@@ -24,7 +24,8 @@
       "src/**/*",
       "renderer/**/*",
       "settings/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "onboarding/**/*"
     ],
     "win": {
       "target": "nsis",
@@ -51,9 +52,16 @@
       "description": "Frameless desktop widget showing Claude plan usage: the 5-hour session limit, the 7-day weekly limit, and any model-scoped weekly limit, with live reset countdowns."
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "license": "build/access-notice.txt",
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false
     }
   },
   "author": "Bryan Henson",

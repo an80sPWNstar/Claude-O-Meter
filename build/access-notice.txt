@@ -1,0 +1,53 @@
+Claude-O-Meter — what it reads, and what it does not
+====================================================
+
+Claude-O-Meter is a desktop widget that shows how much of your Claude plan you
+have used: the 5-hour session limit, the weekly limit, and any model-scoped
+weekly limit. To show those numbers it has to reach your Claude account.
+
+On the next page you choose how it does that. Nothing is read before you
+choose, and you can change the choice later in Settings.
+
+
+WHAT IT MAY READ
+
+  Find it automatically
+      The saved login Claude Code writes on this computer. It checks the
+      .claude folder in your home directory, a folder named by the
+      CLAUDE_CONFIG_DIR environment variable, the standard Windows app-data
+      folders, and folders beside .claude left by config-directory wrappers.
+      If none of those holds a login -- and only then -- it also checks the
+      home directories of WSL distributions that are already running.
+
+      It opens files named .credentials.json. It does not index your disk,
+      does not read your documents, and does not watch the filesystem.
+
+  Point me at the file
+      One file, the one you name. Nothing else on disk is opened.
+
+  Sign in through claude.ai
+      No files are read at all. A sign-in window opens, and the session
+      cookie it returns is stored encrypted on this computer.
+
+
+WHERE IT SENDS THINGS
+
+  One HTTPS request, to Anthropic, asking for your own usage figures --
+  api.anthropic.com for a Claude Code login, or claude.ai if you signed in
+  through the browser window. That is the only network traffic the app makes.
+
+  Your token never leaves this computer. There is no telemetry, no analytics,
+  no crash reporting, and no server belonging to this app.
+
+
+WHERE IT STORES THINGS
+
+  A settings file, the last usage figures, and -- if you sign in through
+  claude.ai -- your session cookie, encrypted with the Windows credential
+  store. All of it under your own AppData folder. Uninstalling removes the
+  program; deleting that folder removes the rest.
+
+
+This program is not affiliated with Anthropic. It is MIT-licensed, and the
+source is at https://github.com/an80sPWNstar/Claude-O-Meter -- every claim on
+this page can be checked there.

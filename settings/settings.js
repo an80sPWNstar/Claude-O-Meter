@@ -16,6 +16,12 @@ const el = {
   acctStatus: document.getElementById('acct-status'),
   acctBtn: document.getElementById('acct-btn'),
   acctErr: document.getElementById('acct-err'),
+  acctSrc: document.getElementById('acct-src'),
+  accessOpts: document.querySelectorAll('input[name=accessmode]'),
+  accessPathRow: document.getElementById('access-path-row'),
+  accessPath: document.getElementById('access-path'),
+  accessBrowse: document.getElementById('access-browse'),
+  accessNote: document.getElementById('access-note'),
 }
 
 // Swatch colors mirror the [data-theme] blocks in renderer/index.html.
@@ -63,6 +69,7 @@ function fill(s) {
   el.themePick.querySelectorAll('.theme-swatch').forEach(sw => {
     sw.classList.toggle('active', sw.dataset.theme === tid)
   })
+  fillAccess(s)
 }
 
 function push() {
@@ -128,6 +135,121 @@ function showError(msg) {
   el.acctErr.textContent = msg
   el.acctErr.style.display = msg ? 'block' : 'none'
 }
+
+// ── account access mode ────────────────────────────────────────────
+// The same three choices the installer offers, because a decision about what
+// the app may read has to be revisitable without a reinstall.
+const ACCESS_NOTES = {
+  auto: 'Checks the .claude folder, CLAUDE_CONFIG_DIR, the app-data folders, the macOS keychain, and — only if none of those has a login — running WSL distributions.',
+  manual: 'Reads the one file named above, and nothing else on disk.',
+  browser: 'Reads nothing on disk. Use the button above to sign in.',
+}
+
+function currentAccessMode() {
+  const picked = Array.from(el.accessOpts).find((r) => r.checked)
+  return picked ? picked.value : 'auto'
+}
+
+function paintAccess() {
+  const mode = currentAccessMode()
+  el.accessPathRow.classList.toggle('on', mode === 'manual')
+  el.accessNote.textContent = ACCESS_NOTES[mode] || ''
+}
+
+function pushAccess() {
+  const mode = currentAccessMode()
+  if (mode === 'manual' && !el.accessPath.value) {
+    el.accessNote.textContent = 'Choose the file first — nothing is read until you do.'
+    return
+  }
+  window.claudeOMeter.setAccessMode({ mode, credentialPath: el.accessPath.value })
+}
+
+for (const radio of el.accessOpts) {
+  radio.addEventListener('change', () => { paintAccess(); pushAccess() })
+}
+
+el.accessBrowse.addEventListener('click', async () => {
+  const chosen = await window.claudeOMeter.pickCredentialFile()
+  if (!chosen) return
+  el.accessPath.value = chosen
+  // Say straight away whether that file is any good, rather than leaving the
+  // widget blank and the user guessing.
+  const probe = await window.claudeOMeter.probeAccessMode({ mode: 'manual', credentialPath: chosen })
+  el.accessNote.textContent = probe && probe.found
+    ? (probe.expired ? 'That file holds an expired login — run claude once to refresh it.' : 'Login found in that file.')
+    : 'No Claude login in that file.'
+  pushAccess()
+})
+
+function fillAccess(s) {
+  const mode = s && s.accessMode ? s.accessMode : 'auto'
+  for (const radio of el.accessOpts) radio.checked = radio.value === mode
+  el.accessPath.value = (s && s.credentialPath) || ''
+  paintAccess()
+}
+
+// ── where the numbers are coming from, or why there are none ───────
+// A blank widget has half a dozen causes that look identical from the outside:
+// no cswap, no Claude Code login on THIS machine, a credentials file that went
+// stale because the CLI has not run in a while, polling switched off, or the
+// endpoint rate-limiting us. Print the one that actually applies.
+function ago(ms) {
+  if (!ms) return 'never'
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
+  if (s < 60) return s + 's ago'
+  if (s < 3600) return Math.round(s / 60) + 'm ago'
+  return Math.round(s / 3600) + 'h ago'
+}
+
+function until(ms) {
+  if (!ms) return 'for an unknown time'
+  const m = Math.round((ms - Date.now()) / 60000)
+  if (m <= 0) return 'expired'
+  if (m < 60) return 'another ' + m + 'm'
+  return 'another ' + Math.round(m / 60) + 'h'
+}
+
+function describeSource(d) {
+  if (!d) return ''
+  const lines = []
+  if (d.swap && d.swap.ok && d.swap.accounts) {
+    lines.push('Source: cswap — ' + d.swap.accounts + ' account' + (d.swap.accounts === 1 ? '' : 's'))
+    return lines.join('\n')
+  }
+  lines.push("cswap: not detected — using this computer's Claude Code login")
+  if (!d.pollEnabled) {
+    lines.push("Polling is off — turn on 'Poll Claude usage' above")
+    return lines.join('\n')
+  }
+  const c = d.provider && d.provider.credentials
+  if (!c || !c.found) {
+    lines.push('Claude Code credentials: none found on this computer')
+    lines.push("Run 'claude' once and sign in, or use the button above")
+  } else if (c.expired) {
+    lines.push('Claude Code credentials: ' + c.source + ' — expired')
+    lines.push("Run 'claude' once; it refreshes the token and this picks it up")
+  } else {
+    lines.push('Claude Code credentials: ' + c.source)
+    lines.push('Token good for ' + until(c.expiresAt) + (c.subscriptionType ? ' · plan: ' + c.subscriptionType : ''))
+  }
+  const p = d.provider && d.provider.poll
+  if (p && p.at) {
+    lines.push(p.ok
+      ? 'Last usage fetch: OK ' + ago(p.at)
+      : 'Last usage fetch: failed ' + ago(p.at) + (p.status ? ' (HTTP ' + p.status + ')' : '') + (p.error ? ' — ' + p.error : ''))
+  }
+  return lines.join('\n')
+}
+
+function refreshDiagnostics() {
+  window.claudeOMeter.claudeDiagnostics()
+    .then((d) => { el.acctSrc.textContent = describeSource(d) })
+    .catch(() => { el.acctSrc.textContent = '' })
+}
+
+refreshDiagnostics()
+setInterval(refreshDiagnostics, 5000)
 
 window.claudeOMeter.claudeStatus().then(fillStatus)
 window.claudeOMeter.onClaudeStatusChange(fillStatus)

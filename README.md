@@ -23,17 +23,29 @@ No more guessing whether you're about to hit a limit mid-task.
 1. Download `Claude-O-Meter Setup <version>.exe` from the
    [Releases page](https://github.com/an80sPWNstar/Claude-O-Meter/releases).
 2. Double-click it. It won't ask for admin rights — it installs just for you.
-3. It opens on its own and puts an icon in your tray, down by the clock.
+3. The installer walks through four pages, and none of them is decoration:
+   - **What it reads** — the whole disclosure, in plain words, before anything
+     is installed. It is also in this repo as `build/access-notice.txt`.
+   - **Install location** — the default is your per-user programs folder;
+     change it if you like.
+   - **Account access** — the three choices described under
+     [Where the numbers come from](#where-the-numbers-come-from). Nothing is
+     read until you pick one, and Settings can change it later.
+   - **Done** — what got installed where, and which access choice was recorded.
+4. It opens on its own and puts an icon in your tray, down by the clock.
 
-If you already have Claude Code installed and logged in, the numbers show up within a few seconds
-and you're done. If not, click **Settings** at the top of the widget → **Settings…** → **Log in with
+If you picked automatic discovery and Claude Code is logged in on that machine,
+the numbers show up within a few seconds. If you picked the claude.ai sign-in,
+click **Settings** at the top of the widget → **Settings…** → **Log in with
 Claude account**.
 
 A couple of things worth knowing:
 
 - **Installing a newer version?** Quit the running copy first (right-click the tray icon → Quit).
   Windows won't let the installer replace the app while it's running, and the install fails halfway.
-- **To uninstall:** Settings → Apps → Installed apps, same as anything else.
+- **To uninstall:** Settings → Apps → Installed apps, same as anything else. Your settings and any
+  stored session cookie live under `%APPDATA%\claude-o-meter` and are left alone — delete that
+  folder to remove them too.
 
 ### Linux — Ubuntu, Debian, Mint, Pop!_OS
 
@@ -169,19 +181,43 @@ no subscription limits to show).
 
 ## Where the numbers come from
 
-The app tries these in order, and any one of them is enough:
+**You choose what the app may read, before it reads anything.** The Windows
+installer asks during setup; on Linux, macOS or a source checkout the app asks
+the first time it runs. Either way the answer is one of three, and it can be
+changed later under Settings → Account access:
 
-1. **Claude Code's saved login** on your computer (`~/.claude/.credentials.json`), checked every 5
-   minutes.
-2. **A claude.ai login** through the app, if there's no Claude Code login to read.
-3. **cswap**, if you have it — checked every 30 seconds, and this is what fills in the
-   multi-account view.
+1. **Find it automatically.** Looks for the login Claude Code saves on this
+   computer: `~/.claude`, a folder named by `CLAUDE_CONFIG_DIR`, folders beside
+   `.claude` left by config-directory wrappers, the standard Windows app-data
+   folders, and the macOS login keychain. Only if none of those holds a login
+   does it also check the home directories of WSL distributions that are
+   already running. It opens files named `.credentials.json` and nothing else.
+2. **Point me at the file.** One file, the one you name. Nothing else on disk
+   is opened.
+3. **Sign in through claude.ai.** No files are read at all. A sign-in window
+   opens and the session cookie is stored encrypted on your machine.
 
-If you have none of those, the widget tells you so instead of sitting there blank.
+Until that question is answered the app reads nothing, and the widget says so.
 
-When cswap is running, the app stops doing its own check. Both would be asking Anthropic the same
-question about the same account, and asking too often gets an account temporarily cut off from
-checking at all.
+**cswap**, if you have it installed, is checked every 30 seconds regardless —
+it is a command-line tool you installed on purpose, and it is what fills in the
+multi-account view. When cswap is running the app stops doing its own check:
+both would be asking Anthropic the same question about the same account, and
+asking too often gets an account temporarily cut off from checking at all.
+
+**"It can't see my login."** Open Settings and read the small print under the
+login button — it names the file it read, how long the token is still good for,
+and what the last usage check answered. The usual cause on a fresh install is a
+token that has gone stale; Claude Code refreshes it when it runs, so open a
+terminal, run `claude` once on that computer, and the widget picks it up on its
+next check. The app deliberately does not refresh the token itself: the refresh
+token rotates, and renewing it behind Claude Code's back would log the CLI out.
+
+## What leaves your computer
+
+One HTTPS request, to Anthropic, asking for your own usage figures. No
+telemetry, no analytics, no crash reporting, no server belonging to this app.
+Your token stays in the main process and is never handed to a window.
 
 ## For developers
 

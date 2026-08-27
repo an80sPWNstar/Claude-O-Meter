@@ -6,30 +6,10 @@
 // Any failure (missing credentials, non-200, bad JSON) just clears nothing and
 // retries next poll; getReadings() returns [] until a fetch succeeds.
 
-const fs = require('fs')
-const path = require('path')
-const os = require('os')
+const { findCredentials } = require('./claude-credentials')
 
 const POLL_MS = 5 * 60 * 1000
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
-const CREDENTIAL_FILES = [
-  path.join(os.homedir(), '.claude', '.credentials.json'),          // CLI
-  path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', '.credentials.json'),    // Desktop app (Electron)
-  path.join(os.homedir(), 'AppData', 'Roaming', 'Claude Code', '.credentials.json'), // Desktop app variant
-  path.join(os.homedir(), 'AppData', 'Local', 'Claude', '.credentials.json'),    // Desktop app (Local)
-  path.join(os.homedir(), 'AppData', 'Local', 'Claude Code', '.credentials.json'), // Desktop app variant
-]
-
-function readToken() {
-  for (const file of CREDENTIAL_FILES) {
-    try {
-      const creds = JSON.parse(fs.readFileSync(file, 'utf8'))
-      const token = creds && creds.claudeAiOauth && creds.claudeAiOauth.accessToken
-      if (typeof token === 'string' && token.length) return token
-    } catch { /* next path */ }
-  }
-  return null
-}
 
 function pct(v) {
   return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : null
@@ -44,16 +24,31 @@ function minutesUntil(ts) {
   return Math.max(0, Math.round((ts - Date.now()) / 60000))
 }
 
-function start() {
+function start(options) {
+  // A function, not a value: the user can change the access mode in Settings
+  // while the poller is running, and the next poll must honour it.
+  const getAccess = (options && options.getAccess) || (() => ({ mode: 'ask' }))
   let cache = null
   let timer = null
   let stopped = false
+  // Diagnostics, not state: nothing here changes what the poller does, it only
+  // lets the settings window say why the meters are empty. No token in it.
+  let creds = { source: null, expiresAt: null, subscriptionType: null, expired: false, found: 0, mode: 'ask' }
+  let lastPoll = { at: null, ok: false, status: null, error: null }
 
   async function poll() {
-    // Re-read every poll — Claude Code refreshes the token itself.
-    const token = readToken()
-    if (!token) {
-      console.log('[claude-usage] no OAuth token — falling back to cookie session')
+    // Re-read every poll — Claude Code refreshes the token itself, and a
+    // credentials file can appear at any time (the user logs in mid-session).
+    const found = findCredentials(getAccess())
+    const token = found.token
+    creds = { source: found.source, expiresAt: found.expiresAt, subscriptionType: found.subscriptionType, expired: found.expired, found: found.found, mode: found.mode }
+    if (!token || found.expired) {
+      // An expired token is worse than no token: the endpoint answers 401 and
+      // the widget looks broken. Claude Code refreshes it the next time it
+      // runs, so skip the request and let the settings window say so.
+      console.log(found.found
+        ? `[claude-usage] credentials at ${found.source} are expired — falling back to cookie session`
+        : '[claude-usage] no OAuth token — falling back to cookie session')
       return pollWeb()
     }
     try {
@@ -66,9 +61,11 @@ function start() {
       })
       if (!res.ok) {
         const text = await res.text().catch(() => '')
+        lastPoll = { at: Date.now(), ok: false, status: res.status, error: text.slice(0, 200) || null }
         console.warn(`[claude-usage] HTTP ${res.status}: ${text.slice(0, 300)}`)
         return
       }
+      lastPoll = { at: Date.now(), ok: true, status: res.status, error: null }
       const body = await res.json()
       if (stopped) return
 
@@ -100,6 +97,7 @@ function start() {
         fetchedAt: Date.now(),
       }
     } catch (err) {
+      lastPoll = { at: Date.now(), ok: false, status: null, error: err && err.message ? err.message : String(err) }
       console.warn('[claude-usage] poll error:', err && err.message)
     }
   }
@@ -161,6 +159,11 @@ function start() {
         model: cache.scopedModel || null, unit: 'min', value: minutesUntil(cache.scopedResetsAt), min: 0, max: 10080,
       })
       return out
+    },
+    diagnostics() {
+      let web = { loggedIn: false }
+      try { web = require('./claude-web').status() } catch { /* module unused */ }
+      return { credentials: creds, poll: lastPoll, hasData: !!cache, web }
     },
     stop() {
       stopped = true

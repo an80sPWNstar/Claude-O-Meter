@@ -58,7 +58,8 @@ Claude-O-Meter/
 │   └── renderer.js         # scale-to-fit, JS drag, single- and multi-account views
 ├── settings/               # settings window — index.html + settings.js
 ├── src/sensors/
-│   ├── claude-usage.js     # OAuth provider: token from ~/.claude/.credentials.json, 5 min poll
+│   ├── claude-usage.js     # OAuth provider: token via claude-credentials.js, 5 min poll
+│   ├── claude-credentials.js # finds Claude Code creds on any host, any layout
 │   ├── claude-web.js       # claude.ai cookie session fallback (hidden BrowserWindow fetch)
 │   ├── claude-swap.js      # cswap CLI collector: all accounts + auto-daemon detect, 45s poll
 │   ├── cswap-cmd.js        # platform-correct cswap invocation (cmd.exe shim on Windows)
@@ -86,6 +87,59 @@ read as if they were all current.
 The active account is marked with an `ACTIVE` pill, not with an arrow and an accent colour. The
 colour is still there but it now repeats a word instead of being the only carrier of the meaning —
 an unlabelled marker reads as decoration.
+
+### Account access is a user decision, not a default
+`accessMode` in settings.json is the whole point of the credential code, and its default is `ask`,
+which reads nothing at all. Three real values: `auto` (the sweep described above), `manual` (one
+path the user named, `credentialPath`, and nothing else), `browser` (no filesystem access; the
+claude.ai cookie session owns it). `findCredentials()` takes `{ mode, credentialPath }` and enforces
+this — there is no code path that reads a credentials file without a mode saying it may.
+
+Who answers the question: on Windows the NSIS installer, whose access page writes
+`userData/install-prefs.txt` as `key=value`; `adoptInstallerChoice()` folds that into settings.json
+on first launch and deletes it. Everywhere else — AppImage, deb, source checkout — `openOnboarding()`
+puts the same three choices in a window at first run. Settings can change it afterwards, and
+whatever Settings says outranks the installer.
+
+The installer is deliberately **not** one-click any more (`nsis.oneClick: false`). Its four pages are
+the disclosure (`build/access-notice.txt`, shown as the licence page), the install directory
+(changeable — it is a per-user install, so nothing breaks), the access choice
+(`build/installer.nsh`), and a finish page that repeats what was chosen. A widget that reads
+credential files off someone's disk without ever saying so is the thing this replaced.
+
+`build/installer.nsh` has two ordering constraints that cost a build each, both commented in the
+file: the custom include is pulled in **before** MUI2.nsh, so anything needing `MUI_HEADER_TEXT`
+must live inside the `customPageAfterChangeDir` macro rather than at file scope; and
+`MUI_FINISHPAGE_TEXT` must be `!define`d at file scope, because `customHeader` is inserted after the
+pages are declared. NSIS also builds the uninstaller in a second pass that expands none of these
+macros, so every `Var` in the file reads as unreferenced there -- warning 6001, which
+electron-builder treats as a build error. The whole file is therefore wrapped in
+`!ifndef BUILD_UNINSTALLER`; chasing the warnings one Var at a time is a build cycle each and
+never converges.
+
+**Finding the credentials is its own problem.** The widget cannot assume anything about the
+computer it lands on, and a fresh install on a machine with no cswap is the normal case, not the
+exotic one. `claude-credentials.js` sweeps, cheapest first: `$CLAUDE_CONFIG_DIR` (which moves the
+whole config dir, credentials included — a machine using it has no `~/.claude` at all),
+`~/.claude`, any `~/.claude*` sibling left by a config-dir wrapper, the XDG config dir, the four
+Windows AppData layouts, and the macOS login keychain, where there is no file to find at all
+(`security find-generic-password -s "Claude Code-credentials"`). Only when all of that comes back
+empty does it pay for the slow sweep: WSL distro homes seen from Windows over the `\wsl$` share,
+and Windows homes seen from WSL under `/mnt/<letter>/Users`. A login inside a WSL distro is
+invisible to a Windows-side Electron app otherwise, and that is a normal way to have Claude Code
+installed.
+
+**An expired token is treated as no token, and said out loud.** The credentials file carries
+`expiresAt`; Claude Code refreshes it when it runs, so a machine where the CLI has been idle holds a
+token the usage endpoint answers 401 to. The provider skips the request rather than spend it, and
+the settings window says which file it read and that it is stale. The widget does **not** refresh
+the token itself: the refresh token rotates, so refreshing behind Claude Code's back invalidates the
+copy the CLI holds — the same two-holders-of-one-token drift cswap warns about.
+
+**Settings explains an empty widget.** `claude:diagnostics` returns the cswap account count, the
+credential source and expiry, and the last usage fetch (OK, or the HTTP status and body). Six
+different causes — no cswap, no login on this machine, a stale token, polling switched off, a 429,
+a network failure — used to produce one identical blank panel.
 
 **The OAuth provider and cswap never run at the same time.** Both hit the same
 `/api/oauth/usage` endpoint, which budgets ~28-30 requests/hour *per token* and stays saturated for

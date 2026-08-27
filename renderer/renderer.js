@@ -127,6 +127,7 @@ document.documentElement.addEventListener('mouseleave', () => {
 
 // ── Settings ───────────────────────────────────────────────────────
 let usageEnabled = true
+let accessMode = 'auto'
 
 function applySettings(s) {
   if (!s) return
@@ -135,10 +136,9 @@ function applySettings(s) {
     textScale = s.textScale
     fitBezel()
   }
-  if (typeof s.claudeUsage === 'boolean') {
-    usageEnabled = s.claudeUsage
-    render()
-  }
+  if (typeof s.accessMode === 'string') accessMode = s.accessMode
+  if (typeof s.claudeUsage === 'boolean') usageEnabled = s.claudeUsage
+  render()
 }
 window.claudeOMeter?.onSettingsChange?.(applySettings)
 window.claudeOMeter?.getSettings?.()?.then?.(applySettings)
@@ -336,9 +336,12 @@ function render() {
   // Any reading present → show the meters (each degrades to '--%' on its own).
   // Nothing at all → the hint says WHY: polling off vs data not fetched yet.
   const active = sessionPct || weekPct || sessionReset || weekReset || scopedPct || scopedReset
-  el.hint.textContent = usageEnabled
-    ? 'Waiting for Claude usage — log in via Settings if not connected'
-    : 'Usage polling is off — enable it in Settings'
+  // Three different silences, three different sentences. 'ask' is the one that
+  // matters most: nothing has been read because nobody has said it may be.
+  if (!usageEnabled) el.hint.textContent = 'Usage polling is off — enable it in Settings'
+  else if (accessMode === 'ask') el.hint.textContent = 'Waiting on you: choose how this app may reach your Claude account'
+  else if (accessMode === 'browser') el.hint.textContent = 'Not signed in — use Log in with Claude account in Settings'
+  else el.hint.textContent = 'Waiting for Claude usage — check Account access in Settings'
   el.hint.style.display = active ? 'none' : 'flex'
   el.meters.style.display = active ? 'flex' : 'none'
   if (!active) return

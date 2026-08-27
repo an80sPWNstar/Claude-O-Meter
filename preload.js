@@ -24,5 +24,10 @@ contextBridge.exposeInMainWorld('claudeOMeter', {
   claudeLogin:  () => ipcRenderer.invoke('claude:login'),
   claudeLogout: () => ipcRenderer.invoke('claude:logout'),
   claudeStatus: () => ipcRenderer.invoke('claude:status'),
+  claudeDiagnostics: () => ipcRenderer.invoke('claude:diagnostics'),
   onClaudeStatusChange: (cb) => ipcRenderer.on('claude:status-change', (_e, s) => cb(s)),
+  // How the app may reach the account (first-run window + settings window)
+  pickCredentialFile: () => ipcRenderer.invoke('access:pick-file'),
+  setAccessMode:  (choice) => ipcRenderer.invoke('access:choose', choice),
+  probeAccessMode: (choice) => ipcRenderer.invoke('access:probe', choice),
 })
